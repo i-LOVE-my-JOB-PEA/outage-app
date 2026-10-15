@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>จัดการงานซ่อม</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>🛠️ จัดการงานซ่อมไฟฟ้า</h1>
+  <span class="row"><a href="/">← หน้าประชาชน</a><a href="#" id="logout" class="hidden">ออกจากระบบ</a></span>
+</header>
+<main>
+  <section class="card" id="loginBox" style="max-width:380px;margin:40px auto;width:100%">
+    <h2>เข้าสู่ระบบเจ้าหน้าที่</h2>
+    <form id="loginForm">
+      <label for="pw">รหัสผ่าน</label>
+      <input id="pw" type="password" autofocus>
+      <p><button>เข้าสู่ระบบ</button></p>
+      <div id="loginErr" class="msg err hidden"></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden" style="display:grid;gap:16px">
+    <div class="stats" id="stats"></div>
+    <section class="card"><div id="smap"></div></section>
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">รายการแจ้งเหตุ</h2>
+        <select id="filter" style="width:auto">
+          <option value="">ทุกสถานะ</option><option value="pending">รอรับเรื่อง</option>
+          <option value="in_progress">กำลังซ่อม</option><option value="resolved">แก้ไขแล้ว</option>
+        </select>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง</th><th>สถานะ</th><th>ทีมช่าง</th><th>บันทึก</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem('staffToken');
+let data = [], map, layer;
+
+function showApp(on) {
+  $('loginBox').classList.toggle('hidden', on);
+  $('app').classList.toggle('hidden', !on);
+  $('logout').classList.toggle('hidden', !on);
+  if (on && !map) { map = makeMap('smap'); layer = L.layerGroup().addTo(map); }
+  if (on) setTimeout(() => map.invalidateSize(), 50);
+}
+
+$('loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    token = (await api('/api/login', { method: 'POST', body: { password: $('pw').value } })).token;
+    sessionStorage.setItem('staffToken', token);
+    showApp(true); load();
+  } catch (err) { $('loginErr').textContent = err.message; $('loginErr').classList.remove('hidden'); }
+};
+$('logout').onclick = (e) => { e.preventDefault(); sessionStorage.removeItem('staffToken'); token = null; location.reload(); };
+
+const opt = (cur) => Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
+
+function render() {
+  const f = $('filter').value;
+  const count = (s) => data.filter((o) => o.status === s).length;
+  $('stats').innerHTML = [['ทั้งหมด', data.length, '#374151'], ...Object.keys(STATUS_LABEL).map((s) => [STATUS_LABEL[s], count(s), STATUS_COLOR[s]])]
+    .map(([l, n, c]) => `<div class="stat"><b style="color:${c}">${n}</b>${l}</div>`).join('');
+
+  layer.clearLayers();
+  data.filter((o) => o.status !== 'resolved').forEach((o) =>
+    pin(o).addTo(layer).bindPopup(`<b>${o.code}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}`));
+
+  $('rows').innerHTML = data.filter((o) => !f || o.status === f).map((o) => `
+    <tr data-id="${o.id}">
+      <td><b>${o.code}</b><div class="muted">${fmt(o.createdAt)}</div></td>
+      <td>${TYPE_LABEL[o.type]}<div>${esc(o.address)}</div><div class="muted">${esc(o.description)}</div></td>
+      <td>${esc(o.reporterName) || '-'}<div class="muted">${esc(o.reporterPhone)}</div></td>
+      <td><select class="st">${opt(o.status)}</select></td>
+      <td><input class="crew" value="${esc(o.crew)}" placeholder="ชื่อทีม" style="min-width:110px"></td>
+      <td><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
+      <td><button class="save">บันทึก</button></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการ</td></tr>';
+}
+
+$('rows').onclick = async (e) => {
+  if (!e.target.classList.contains('save')) return;
+  const tr = e.target.closest('tr');
+  e.target.disabled = true;
+  try {
+    await api('/api/outages/' + tr.dataset.id, { method: 'PATCH', body: {
+      status: tr.querySelector('.st').value, crew: tr.querySelector('.crew').value, note: tr.querySelector('.note').value } }, token);
+    await load();
+  } catch (err) {
+    alert(err.message);
+    if (/เข้าสู่ระบบ/.test(err.message)) { sessionStorage.removeItem('staffToken'); location.reload(); }
+  }
+  e.target.disabled = false;
+};
+$('filter').onchange = render;
+
+async function load() {
+  data = await api('/api/outages', {}, token);
+  if (data.length && data[0].reporterPhone === undefined) { // token หมดอายุ (เซิร์ฟเวอร์รีสตาร์ท)
+    sessionStorage.removeItem('staffToken'); location.reload(); return;
+  }
+  render();
+}
+
+if (token) { showApp(true); load(); }
+setInterval(() => { if (token && !document.activeElement.matches('input,select')) load(); }, 30000);
+</script>
+</body>
+</html>

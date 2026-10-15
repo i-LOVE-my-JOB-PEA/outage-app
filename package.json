@@ -1,0 +1,7 @@
+{
+  "name": "outage-app",
+  "version": "1.0.0",
+  "description": "เว็บแอพแจ้งและจัดการไฟฟ้าขัดข้อง",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

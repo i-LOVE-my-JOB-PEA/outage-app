@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แจ้งไฟฟ้าขัดข้อง</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>⚡ แจ้งไฟฟ้าขัดข้อง</h1>
+  <a href="/staff">สำหรับเจ้าหน้าที่ →</a>
+</header>
+<main>
+  <div class="grid2">
+    <section class="card">
+      <h2>แจ้งเหตุใหม่</h2>
+      <form id="form">
+        <label for="type">ประเภทปัญหา</label>
+        <select id="type" required></select>
+        <label for="address">ที่อยู่ / จุดสังเกต</label>
+        <input id="address" maxlength="200" placeholder="เช่น หน้าตลาด ซอยลาดพร้าว 71" required>
+        <label>ตำแหน่ง (แตะบนแผนที่เพื่อปักหมุด)</label>
+        <div id="map"></div>
+        <div class="row" style="margin-top:6px"><button type="button" class="sec" id="locate">📍 ใช้ตำแหน่งปัจจุบัน</button><span class="muted" id="coord">ยังไม่ได้ปักหมุด</span></div>
+        <label for="description">รายละเอียดเพิ่มเติม (ไม่บังคับ)</label>
+        <textarea id="description" rows="3" maxlength="500"></textarea>
+        <div class="grid2" style="gap:10px">
+          <div><label for="name">ชื่อผู้แจ้ง (ไม่บังคับ)</label><input id="name" maxlength="100"></div>
+          <div><label for="phone">เบอร์โทร (ไม่บังคับ)</label><input id="phone" type="tel" maxlength="20"></div>
+        </div>
+        <p class="muted">ชื่อและเบอร์โทรเห็นได้เฉพาะเจ้าหน้าที่</p>
+        <button id="submit">ส่งเรื่องแจ้ง</button>
+        <div id="result" class="msg hidden"></div>
+      </form>
+    </section>
+
+    <div style="display:grid; gap:16px; align-content:start">
+      <section class="card">
+        <h2>ติดตามสถานะ</h2>
+        <div class="row"><input id="code" placeholder="รหัสติดตาม เช่น PW1A2B3C"><button id="track">ค้นหา</button></div>
+        <div id="trackResult"></div>
+      </section>
+      <section class="card">
+        <h2>เหตุที่แจ้งล่าสุด</h2>
+        <div id="list"><span class="muted">กำลังโหลด…</span></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+$('type').innerHTML = Object.entries(TYPE_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
+const map = makeMap('map');
+const overview = L.layerGroup().addTo(map);
+let chosen = null, marker = null;
+
+function setPoint(lat, lng) {
+  chosen = { lat, lng };
+  if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng]).addTo(map);
+  $('coord').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+map.on('click', (e) => setPoint(e.latlng.lat, e.latlng.lng));
+$('locate').onclick = () => {
+  if (!navigator.geolocation) return alert('เบราว์เซอร์ไม่รองรับ');
+  navigator.geolocation.getCurrentPosition(
+    (p) => { setPoint(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], 16); },
+    () => alert('ไม่สามารถอ่านตำแหน่งได้ กรุณาแตะบนแผนที่แทน'));
+};
+
+function badge(s) { return `<span class="badge" style="background:${STATUS_COLOR[s]}">${STATUS_LABEL[s]}</span>`; }
+function timeline(o) {
+  return '<ul class="timeline">' + o.history.map((h) =>
+    `<li>${fmt(h.at)} — ${STATUS_LABEL[h.status]}${h.note ? ': ' + esc(h.note) : ''}</li>`).join('') + '</ul>';
+}
+
+async function load() {
+  const list = await api('/api/outages');
+  overview.clearLayers();
+  list.filter((o) => o.status !== 'resolved').forEach((o) =>
+    pin(o).addTo(overview).bindPopup(`${TYPE_LABEL[o.type]}<br>${esc(o.address)}<br>${STATUS_LABEL[o.status]}`));
+  $('list').innerHTML = list.slice(0, 8).map((o) => `
+    <div class="item"><div class="row" style="justify-content:space-between"><b>${TYPE_LABEL[o.type]}</b>${badge(o.status)}</div>
+    <div>${esc(o.address)}</div><div class="muted">${fmt(o.createdAt)}</div></div>`).join('') || '<span class="muted">ยังไม่มีรายการ</span>';
+}
+
+$('form').onsubmit = async (e) => {
+  e.preventDefault();
+  const r = $('result'); r.className = 'msg hidden';
+  if (!chosen) { r.className = 'msg err'; r.textContent = 'กรุณาปักหมุดตำแหน่งบนแผนที่'; return; }
+  $('submit').disabled = true;
+  try {
+    const o = await api('/api/outages', { method: 'POST', body: {
+      type: $('type').value, address: $('address').value, description: $('description').value,
+      reporterName: $('name').value, reporterPhone: $('phone').value, ...chosen } });
+    r.className = 'msg ok';
+    r.innerHTML = `ส่งเรื่องแล้ว รหัสติดตามของคุณคือ <b>${o.code}</b> (กรุณาจดไว้)`;
+    $('code').value = o.code;
+    e.target.reset(); $('coord').textContent = 'ยังไม่ได้ปักหมุด';
+    if (marker) { map.removeLayer(marker); marker = null; chosen = null; }
+    load();
+  } catch (err) { r.className = 'msg err'; r.textContent = err.message; }
+  $('submit').disabled = false;
+};
+
+$('track').onclick = async () => {
+  const code = $('code').value.trim();
+  if (!code) return;
+  try {
+    const o = await api('/api/outages/track?code=' + encodeURIComponent(code));
+    $('trackResult').innerHTML = `<div class="item"><div class="row" style="justify-content:space-between"><b>${o.code} · ${TYPE_LABEL[o.type]}</b>${badge(o.status)}</div>
+      <div>${esc(o.address)}</div>${timeline(o)}</div>`;
+  } catch (err) { $('trackResult').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+};
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
