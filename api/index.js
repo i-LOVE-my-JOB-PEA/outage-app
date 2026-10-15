@@ -128,6 +128,6 @@ module.exports = async (req, res) => {
     send(res, 404, { error: 'ไม่พบ API' });
   } catch (e) {
     console.error(e);
-    send(res, 500, { error: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์', detail: String(e && e.message).slice(0, 300) }); // TODO: ลบ detail หลังแก้บั๊ก
+    send(res, 500, { error: 'เกิดข้อผิดพลาดบนเซิร์ฟเวอร์' });
   }
 };
