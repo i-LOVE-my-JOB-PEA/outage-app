@@ -27,14 +27,10 @@
         <label for="description">รายละเอียดเพิ่มเติม (ไม่บังคับ)</label>
         <textarea id="description" rows="3" maxlength="500"></textarea>
         <div class="grid2" style="gap:10px">
-          <div><label for="name">ชื่อผู้แจ้ง (ไม่บังคับ)</label><input id="name" maxlength="100"></div>
+          <div><label for="name">ชื่อเล่น (ไม่บังคับ)</label><input id="name" maxlength="100"></div>
           <div><label for="phone">เบอร์โทร (ไม่บังคับ)</label><input id="phone" type="tel" maxlength="20"></div>
         </div>
-        <p class="muted">ชื่อและเบอร์โทรเห็นได้เฉพาะเจ้าหน้าที่ ใช้เพื่อติดต่อกลับเรื่องการแก้ไขไฟฟ้าขัดข้องเท่านั้น ไม่เปิดเผยต่อสาธารณะ</p>
-        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:normal">
-          <input type="checkbox" id="consent" style="width:auto;margin-top:3px">
-          <span>ข้าพเจ้ายินยอมให้เก็บชื่อและเบอร์โทรเพื่อการติดต่อกลับ (ไม่ต้องติ๊กหากไม่กรอกชื่อ/เบอร์โทร)</span>
-        </label>
+        <p class="muted">ชื่อเล่นและเบอร์โทรเห็นได้เฉพาะเจ้าหน้าที่ ใช้เพื่อติดต่อกลับเรื่องไฟฟ้าขัดข้องเท่านั้น ไม่เปิดเผยต่อสาธารณะ</p>
         <button id="submit">ส่งเรื่องแจ้ง</button>
         <div id="result" class="msg hidden"></div>
       </form>
@@ -101,7 +97,7 @@ $('form').onsubmit = async (e) => {
   try {
     const o = await api('/api/outages', { method: 'POST', body: {
       type: $('type').value, address: $('address').value, description: $('description').value,
-      reporterName: $('name').value, reporterPhone: $('phone').value, consent: $('consent').checked, ...chosen } });
+      reporterName: $('name').value, reporterPhone: $('phone').value, ...chosen } });
     r.className = 'msg ok';
     r.innerHTML = `ส่งเรื่องแล้ว รหัสติดตามของคุณคือ <b>${esc(o.code)}</b> (กรุณาจดไว้)` +
       (o.alreadyReported ? '<br>มีผู้แจ้งเหตุใกล้จุดนี้แล้ว ทีมงานรับทราบและกำลังดำเนินการ' : '');

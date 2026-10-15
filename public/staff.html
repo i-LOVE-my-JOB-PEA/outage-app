@@ -38,6 +38,12 @@
         <div><b>ตามประเภทปัญหา</b><div id="byType"></div></div>
         <div><b>ตามสาเหตุ (ที่เจ้าหน้าที่บันทึก)</b><div id="byCause"></div></div>
       </div>
+      <div style="margin-top:12px"><b>พื้นที่ที่ไฟดับบ่อย (เรียงตามจำนวนเหตุ ไม่นับแจ้งซ้ำ)</b>
+        <div class="tablewrap"><table><thead><tr><th>พื้นที่ (ตัวอย่างที่อยู่)</th><th>จำนวนเหตุ</th><th>สาเหตุหลัก</th><th>ปัญหาที่พบบ่อย</th><th></th></tr></thead><tbody id="hotRows"></tbody></table></div></div>
+      <div class="grid2" style="margin-top:12px">
+        <div><b>เหตุเกิดช่วงเวลาไหนของวัน</b><div id="byHour"></div></div>
+        <div><b>เหตุเกิดวันไหนของสัปดาห์</b><div id="byWeekday"></div></div>
+      </div>
       <div style="margin-top:12px"><b>จำนวนการแจ้งเหตุรายวัน (30 วันล่าสุด)</b><div id="daily"></div></div>
     </section>
     <section class="card">
@@ -49,7 +55,7 @@
         </select>
       </div>
       <div class="tablewrap"><table>
-        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
+        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
     </section>
@@ -154,10 +160,29 @@ async function loadStats() {
   const max = Math.max(1, ...days.map((d) => s.daily[d] || 0));
   $('daily').innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:80px">${days.map((d) =>
     `<div title="${d}: ${s.daily[d] || 0}" style="flex:1;background:#2563eb;min-height:2px;height:${((s.daily[d] || 0) / max) * 100}%"></div>`).join('')}</div>`;
+  const col = (arr, label) => `<div style="display:flex;align-items:flex-end;gap:2px;height:70px">${arr.map((n, i) =>
+    `<div title="${label(i)}: ${n} เหตุ" style="flex:1;background:#2563eb;min-height:2px;height:${(n / Math.max(1, ...arr)) * 100}%"></div>`).join('')}</div>`;
+  const WD = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  $('byHour').innerHTML = col(s.byHour, (i) => String(i).padStart(2, '0') + ':00') +
+    '<div class="muted" style="display:flex;justify-content:space-between"><span>00:00</span><span>12:00</span><span>23:00</span></div>';
+  $('byWeekday').innerHTML = bars(Object.fromEntries(s.byWeekday.map((n, i) => [WD[i], n])), {});
+  $('hotRows').innerHTML = s.hotspots.map((h) => `<tr>
+    <td>${esc(h.address)}</td><td><b>${h.count}</b></td>
+    <td>${h.topCause ? esc(CAUSE_LABEL[h.topCause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
+    <td>${esc(TYPE_LABEL[h.topType] || '')}</td>
+    <td><a href="#" class="goto" data-lat="${h.lat}" data-lng="${h.lng}">ดูบนแผนที่</a></td></tr>`).join('') ||
+    '<tr><td colspan="5" class="muted">ยังไม่มีข้อมูล</td></tr>';
   hot.clearLayers();
   s.hotspots.filter((h) => h.count >= 2).forEach((h) =>
-    L.circle([h.lat, h.lng], { radius: 550, color: '#ea580c', weight: 1, fillOpacity: 0.3 }).addTo(hot).bindPopup(`แจ้งเหตุ ${h.count} ครั้งในพื้นที่นี้`));
+    L.circle([h.lat, h.lng], { radius: 550, color: '#ea580c', weight: 1, fillOpacity: 0.3 }).addTo(hot).bindPopup(`เกิดเหตุ ${h.count} ครั้งในพื้นที่นี้`));
 }
+
+$('hotRows').onclick = (e) => {
+  if (!e.target.classList.contains('goto')) return;
+  e.preventDefault();
+  map.setView([+e.target.dataset.lat, +e.target.dataset.lng], 14);
+  $('smap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
 
 $('export').onclick = async () => {
   try {

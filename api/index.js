@@ -78,10 +78,23 @@ function buildStats(rows) {
   const daily = {};
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
   rows.forEach((o) => { if (new Date(o.createdAt) >= cutoff) { const k = dayKey(o.createdAt); daily[k] = (daily[k] || 0) + 1; } });
+  // พื้นที่ดับบ่อย: นับเฉพาะเหตุจริง (ไม่นับแจ้งซ้ำ) ในช่องตารางประมาณ 1.1 กม.
   const cells = {};
-  rows.forEach((o) => {
-    const k = o.lat.toFixed(2) + ',' + o.lng.toFixed(2); // ช่องตารางประมาณ 1.1 กม.
-    (cells[k] ||= { lat: +o.lat.toFixed(2) + 0.005, lng: +o.lng.toFixed(2) + 0.005, count: 0 }).count++;
+  unique.forEach((o) => {
+    const k = o.lat.toFixed(2) + ',' + o.lng.toFixed(2);
+    if (!cells[k]) cells[k] = { lat: +o.lat.toFixed(2) + 0.005, lng: +o.lng.toFixed(2) + 0.005, count: 0, address: o.address, causes: {}, types: {} };
+    const c = cells[k];
+    c.count++;
+    if (o.cause) c.causes[o.cause] = (c.causes[o.cause] || 0) + 1;
+    c.types[o.type] = (c.types[o.type] || 0) + 1;
+  });
+  const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  // ช่วงเวลาที่เกิดเหตุ (เวลาไทย)
+  const byHour = Array(24).fill(0), byWeekday = Array(7).fill(0);
+  unique.forEach((o) => {
+    const t = new Date(new Date(o.createdAt).getTime() + 7 * 3600 * 1000);
+    byHour[t.getUTCHours()]++;
+    byWeekday[t.getUTCDay()]++;
   });
   return {
     total: rows.length,
@@ -92,8 +105,9 @@ function buildStats(rows) {
     byCause: count(unique, (o) => o.cause),
     avgResponseMin: avg(unique.filter((o) => o.startedAt).map((o) => minutesBetween(o.createdAt, o.startedAt))),
     avgRepairMin: avg(unique.filter((o) => o.resolvedAt).map((o) => minutesBetween(o.createdAt, o.resolvedAt))),
-    daily,
-    hotspots: Object.values(cells).sort((a, b) => b.count - a.count).slice(0, 15),
+    daily, byHour, byWeekday,
+    hotspots: Object.values(cells).sort((a, b) => b.count - a.count).slice(0, 15)
+      .map((c) => ({ lat: c.lat, lng: c.lng, count: c.count, address: c.address, topCause: top(c.causes), topType: top(c.types) })),
   };
 }
 
@@ -168,9 +182,6 @@ module.exports = async (req, res) => {
         const address = clean(b.address, 200);
         if (!address) return send(res, 400, { error: 'กรุณากรอกที่อยู่/จุดสังเกต' });
         const reporterName = clean(b.reporterName, 100), reporterPhone = clean(b.reporterPhone, 20);
-        if ((reporterName || reporterPhone) && b.consent !== true) {
-          return send(res, 400, { error: 'กรุณายินยอมให้เก็บชื่อและเบอร์โทร หรือเว้นว่างไว้' });
-        }
         const now = new Date().toISOString();
 
         // กันสแปม: จำกัดจำนวนการแจ้งต่อ IP (เก็บเฉพาะค่าแฮช)
@@ -187,7 +198,7 @@ module.exports = async (req, res) => {
         const [row] = await sb('outages', { method: 'POST', body: {
           code: 'PW' + crypto.randomBytes(3).toString('hex').toUpperCase(),
           type: b.type, description: clean(b.description, 500), address, lat, lng,
-          reporter_name: reporterName, reporter_phone: reporterPhone, consent: b.consent === true,
+          reporter_name: reporterName, reporter_phone: reporterPhone,
           ip_hash: ipHash, duplicate_of: near ? near.id : null,
           status: 'pending', crew: '', created_at: now, updated_at: now,
           history: [{ status: 'pending', note: 'รับเรื่องแล้ว', public: true, at: now }],
