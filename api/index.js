@@ -182,6 +182,9 @@ module.exports = async (req, res) => {
         const address = clean(b.address, 200);
         if (!address) return send(res, 400, { error: 'กรุณากรอกที่อยู่/จุดสังเกต' });
         const reporterName = clean(b.reporterName, 100), reporterPhone = clean(b.reporterPhone, 20);
+        if (!reporterName) return send(res, 400, { error: 'กรุณากรอกชื่อเล่น' });
+        if (!/^[0-9+\-\s]{9,20}$/.test(reporterPhone)) return send(res, 400, { error: 'กรุณากรอกเบอร์โทรให้ถูกต้อง (ตัวเลข 9–20 หลัก)' });
+        if (b.consent !== true) return send(res, 400, { error: 'กรุณากดยินยอมให้เก็บชื่อเล่นและเบอร์โทร' });
         const now = new Date().toISOString();
 
         // กันสแปม: จำกัดจำนวนการแจ้งต่อ IP (เก็บเฉพาะค่าแฮช)
@@ -198,7 +201,7 @@ module.exports = async (req, res) => {
         const [row] = await sb('outages', { method: 'POST', body: {
           code: 'PW' + crypto.randomBytes(3).toString('hex').toUpperCase(),
           type: b.type, description: clean(b.description, 500), address, lat, lng,
-          reporter_name: reporterName, reporter_phone: reporterPhone,
+          reporter_name: reporterName, reporter_phone: reporterPhone, consent: true,
           ip_hash: ipHash, duplicate_of: near ? near.id : null,
           status: 'pending', crew: '', created_at: now, updated_at: now,
           history: [{ status: 'pending', note: 'รับเรื่องแล้ว', public: true, at: now }],
@@ -221,6 +224,10 @@ module.exports = async (req, res) => {
         if (b.cause !== undefined) {
           if (!CAUSES.includes(b.cause)) return send(res, 400, { error: 'สาเหตุไม่ถูกต้อง' });
           patch.cause = b.cause;
+        }
+        // ปิดงานต้องระบุสาเหตุ (ใช้ค่าใหม่ที่ส่งมา หรือค่าที่เคยบันทึกไว้)
+        if (b.status === 'resolved' && !(patch.cause ?? o.cause)) {
+          return send(res, 400, { error: 'กรุณาระบุสาเหตุก่อนปิดงาน (สถานะ "แก้ไขแล้ว")' });
         }
         if (b.unmerge === true) patch.duplicate_of = null;
         if (statusChanged) {

@@ -54,6 +54,7 @@
           <option value="in_progress">กำลังซ่อม</option><option value="resolved">แก้ไขแล้ว</option>
         </select>
       </div>
+      <datalist id="crewList"></datalist><datalist id="matList"></datalist>
       <div class="tablewrap"><table>
         <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
@@ -101,6 +102,14 @@ function render() {
   data.filter((o) => o.status !== 'resolved').forEach((o) =>
     pin(o).addTo(layer).bindPopup(`<b>${o.code}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}`));
 
+  // ตัวเลือกแบบดรอปดาวจากค่าที่เคยกรอก เรียงตามที่ใช้บ่อยก่อน
+  const common = (key) => {
+    const m = {};
+    data.forEach((o) => { const v = (o[key] || '').trim(); if (v) m[v] = (m[v] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([v]) => `<option value="${esc(v)}">`).join('');
+  };
+  $('crewList').innerHTML = common('crew');
+  $('matList').innerHTML = common('materials');
   const dupOf = (o) => { const p = data.find((x) => x.id === o.duplicateOf); return p ? p.code : '#' + o.duplicateOf; };
   $('rows').innerHTML = data.filter((o) => !f || o.status === f).map((o) => `
     <tr data-id="${o.id}">
@@ -110,9 +119,9 @@ function render() {
       <td>${esc(o.reporterName) || '-'}<div class="muted">${esc(o.reporterPhone)}</div></td>
       <td><select class="st">${opt(o.status)}</select>
         ${o.startedAt ? `<div class="muted">เริ่ม ${fmt(o.startedAt)}</div>` : ''}${o.resolvedAt ? `<div class="muted">เสร็จ ${fmt(o.resolvedAt)}</div>` : ''}</td>
-      <td><input class="crew" value="${esc(o.crew)}" placeholder="ชื่อทีม" style="min-width:110px">
-        <select class="cause" style="margin-top:4px">${causeOpt(o.cause)}</select>
-        <input class="materials" value="${esc(o.materials)}" placeholder="วัสดุที่ใช้" maxlength="300" style="margin-top:4px;min-width:110px"></td>
+      <td><input class="crew" list="crewList" value="${esc(o.crew)}" placeholder="ชื่อทีม (เลือกจากที่เคยกรอก)" style="min-width:110px">
+        <select class="cause" style="margin-top:4px" title="ต้องระบุก่อนปิดงาน">${causeOpt(o.cause)}</select>
+        <input class="materials" list="matList" value="${esc(o.materials)}" placeholder="วัสดุที่ใช้ (เลือกจากที่เคยกรอก)" maxlength="300" style="margin-top:4px;min-width:110px"></td>
       <td><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
       <td><button class="save">บันทึก</button></td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการ</td></tr>';
@@ -123,6 +132,10 @@ $('rows').onclick = async (e) => {
   if (!isUnmerge && !e.target.classList.contains('save')) return;
   e.preventDefault();
   const tr = e.target.closest('tr');
+  if (!isUnmerge && tr.querySelector('.st').value === 'resolved' && !tr.querySelector('.cause').value) {
+    tr.querySelector('.cause').focus();
+    return alert('กรุณาระบุ "สาเหตุ" ก่อนปิดงาน (สถานะ แก้ไขแล้ว)');
+  }
   e.target.disabled = true;
   try {
     const body = isUnmerge ? { unmerge: true } : {
