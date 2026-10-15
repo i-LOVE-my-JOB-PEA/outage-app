@@ -25,7 +25,21 @@
 
   <div id="app" class="hidden" style="display:grid;gap:16px">
     <div class="stats" id="stats"></div>
-    <section class="card"><div id="smap"></div></section>
+    <section class="card"><div id="smap"></div>
+      <p class="muted" style="margin:8px 0 0">วงกลมสีส้ม = พื้นที่ที่มีการแจ้งเหตุบ่อย (ตารางประมาณ 1 กม.) · หมุดสี = เหตุที่ยังไม่ปิดงาน</p>
+    </section>
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">รายงานและสถิติ</h2>
+        <button class="sec" id="export">⬇ ส่งออก CSV</button>
+      </div>
+      <div class="stats" id="kpi"></div>
+      <div class="grid2" style="margin-top:12px">
+        <div><b>ตามประเภทปัญหา</b><div id="byType"></div></div>
+        <div><b>ตามสาเหตุ (ที่เจ้าหน้าที่บันทึก)</b><div id="byCause"></div></div>
+      </div>
+      <div style="margin-top:12px"><b>จำนวนการแจ้งเหตุรายวัน (30 วันล่าสุด)</b><div id="daily"></div></div>
+    </section>
     <section class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
         <h2 style="margin:0">รายการแจ้งเหตุ</h2>
@@ -35,7 +49,7 @@
         </select>
       </div>
       <div class="tablewrap"><table>
-        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง</th><th>สถานะ</th><th>ทีมช่าง</th><th>บันทึก</th><th></th></tr></thead>
+        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
     </section>
@@ -47,13 +61,13 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let token = sessionStorage.getItem('staffToken');
-let data = [], map, layer;
+let data = [], map, layer, hot;
 
 function showApp(on) {
   $('loginBox').classList.toggle('hidden', on);
   $('app').classList.toggle('hidden', !on);
   $('logout').classList.toggle('hidden', !on);
-  if (on && !map) { map = makeMap('smap'); layer = L.layerGroup().addTo(map); }
+  if (on && !map) { map = makeMap('smap'); hot = L.layerGroup().addTo(map); layer = L.layerGroup().addTo(map); }
   if (on) setTimeout(() => map.invalidateSize(), 50);
 }
 
@@ -67,6 +81,8 @@ $('loginForm').onsubmit = async (e) => {
 };
 $('logout').onclick = (e) => { e.preventDefault(); sessionStorage.removeItem('staffToken'); token = null; location.reload(); };
 
+const causeOpt = (cur) => '<option value="">ไม่ระบุสาเหตุ</option>' +
+  Object.entries(CAUSE_LABEL).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
 const opt = (cur) => Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
 
 function render() {
@@ -79,25 +95,34 @@ function render() {
   data.filter((o) => o.status !== 'resolved').forEach((o) =>
     pin(o).addTo(layer).bindPopup(`<b>${o.code}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}`));
 
+  const dupOf = (o) => { const p = data.find((x) => x.id === o.duplicateOf); return p ? p.code : '#' + o.duplicateOf; };
   $('rows').innerHTML = data.filter((o) => !f || o.status === f).map((o) => `
     <tr data-id="${o.id}">
-      <td><b>${o.code}</b><div class="muted">${fmt(o.createdAt)}</div></td>
+      <td><b>${esc(o.code)}</b><div class="muted">${fmt(o.createdAt)}</div>
+        ${o.duplicateOf ? `<div class="muted">⚠ ซ้ำกับ ${esc(dupOf(o))} <a href="#" class="unmerge">แยกเป็นเหตุใหม่</a></div>` : ''}</td>
       <td>${TYPE_LABEL[o.type]}<div>${esc(o.address)}</div><div class="muted">${esc(o.description)}</div></td>
       <td>${esc(o.reporterName) || '-'}<div class="muted">${esc(o.reporterPhone)}</div></td>
-      <td><select class="st">${opt(o.status)}</select></td>
-      <td><input class="crew" value="${esc(o.crew)}" placeholder="ชื่อทีม" style="min-width:110px"></td>
+      <td><select class="st">${opt(o.status)}</select>
+        ${o.startedAt ? `<div class="muted">เริ่ม ${fmt(o.startedAt)}</div>` : ''}${o.resolvedAt ? `<div class="muted">เสร็จ ${fmt(o.resolvedAt)}</div>` : ''}</td>
+      <td><input class="crew" value="${esc(o.crew)}" placeholder="ชื่อทีม" style="min-width:110px">
+        <select class="cause" style="margin-top:4px">${causeOpt(o.cause)}</select>
+        <input class="materials" value="${esc(o.materials)}" placeholder="วัสดุที่ใช้" maxlength="300" style="margin-top:4px;min-width:110px"></td>
       <td><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
       <td><button class="save">บันทึก</button></td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการ</td></tr>';
 }
 
 $('rows').onclick = async (e) => {
-  if (!e.target.classList.contains('save')) return;
+  const isUnmerge = e.target.classList.contains('unmerge');
+  if (!isUnmerge && !e.target.classList.contains('save')) return;
+  e.preventDefault();
   const tr = e.target.closest('tr');
   e.target.disabled = true;
   try {
-    await api('/api/outages/' + tr.dataset.id, { method: 'PATCH', body: {
-      status: tr.querySelector('.st').value, crew: tr.querySelector('.crew').value, note: tr.querySelector('.note').value } }, token);
+    const body = isUnmerge ? { unmerge: true } : {
+      status: tr.querySelector('.st').value, crew: tr.querySelector('.crew').value, note: tr.querySelector('.note').value,
+      cause: tr.querySelector('.cause').value, materials: tr.querySelector('.materials').value };
+    await api('/api/outages/' + tr.dataset.id, { method: 'PATCH', body }, token);
     await load();
   } catch (err) {
     alert(err.message);
@@ -107,12 +132,51 @@ $('rows').onclick = async (e) => {
 };
 $('filter').onchange = render;
 
+const fmtMin = (m) => (m == null ? '-' : m < 90 ? m + ' นาที' : (m / 60).toFixed(1) + ' ชม.');
+const bars = (obj, labels) => {
+  const max = Math.max(1, ...Object.values(obj));
+  return Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<div style="display:grid;grid-template-columns:140px 1fr 32px;gap:8px;align-items:center;margin:4px 0">
+      <span>${esc(labels[k] || k)}</span><div style="background:#2563eb;height:12px;border-radius:6px;width:${(v / max) * 100}%"></div><b>${v}</b></div>`).join('')
+    || '<span class="muted">ยังไม่มีข้อมูล</span>';
+};
+
+async function loadStats() {
+  const s = await api('/api/stats', {}, token);
+  $('kpi').innerHTML = [
+    ['เหตุจริง (ไม่นับซ้ำ)', s.uniqueIncidents, '#374151'], ['แจ้งซ้ำที่รวมแล้ว', s.duplicates, '#d97706'],
+    ['เวลาเฉลี่ยถึงเริ่มซ่อม', fmtMin(s.avgResponseMin), '#2563eb'], ['เวลาเฉลี่ยจนซ่อมเสร็จ', fmtMin(s.avgRepairMin), '#16a34a'],
+  ].map(([l, n, c]) => `<div class="stat"><b style="color:${c}">${n}</b>${l}</div>`).join('');
+  $('byType').innerHTML = bars(s.byType, TYPE_LABEL);
+  $('byCause').innerHTML = bars(s.byCause, CAUSE_LABEL);
+  const days = [];
+  for (let i = 29; i >= 0; i--) { days.push(new Date(Date.now() + 7 * 3600e3 - i * 864e5).toISOString().slice(0, 10)); }
+  const max = Math.max(1, ...days.map((d) => s.daily[d] || 0));
+  $('daily').innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:80px">${days.map((d) =>
+    `<div title="${d}: ${s.daily[d] || 0}" style="flex:1;background:#2563eb;min-height:2px;height:${((s.daily[d] || 0) / max) * 100}%"></div>`).join('')}</div>`;
+  hot.clearLayers();
+  s.hotspots.filter((h) => h.count >= 2).forEach((h) =>
+    L.circle([h.lat, h.lng], { radius: 550, color: '#ea580c', weight: 1, fillOpacity: 0.3 }).addTo(hot).bindPopup(`แจ้งเหตุ ${h.count} ครั้งในพื้นที่นี้`));
+}
+
+$('export').onclick = async () => {
+  try {
+    const r = await fetch('/api/export', { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) throw new Error((await r.json()).error || 'ส่งออกไม่สำเร็จ');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = 'outages-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch (err) { alert(err.message); }
+};
+
 async function load() {
   data = await api('/api/outages', {}, token);
-  if (data.length && data[0].reporterPhone === undefined) { // token หมดอายุ (เซิร์ฟเวอร์รีสตาร์ท)
+  if (data.length && data[0].reporterPhone === undefined) { // token หมดอายุ
     sessionStorage.removeItem('staffToken'); location.reload(); return;
   }
   render();
+  loadStats().catch(() => {});
 }
 
 if (token) { showApp(true); load(); }

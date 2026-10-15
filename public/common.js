@@ -2,6 +2,10 @@ const TYPE_LABEL = {
   power_out: 'ไฟดับ', wire_down: 'สายไฟขาด/ตก', transformer: 'หม้อแปลงชำรุด',
   pole: 'เสาไฟล้ม/เอียง', flicker: 'ไฟตกไฟกระชาก', other: 'อื่น ๆ',
 };
+const CAUSE_LABEL = {
+  tree: 'ต้นไม้/กิ่งไม้ทับสาย', lightning: 'ฟ้าผ่า/พายุ', aging: 'อุปกรณ์เสื่อมสภาพ', accident: 'อุบัติเหตุ/รถชน',
+  animal: 'สัตว์', overload: 'โหลดเกิน', planned: 'ดับไฟตามแผนงาน', other: 'อื่น ๆ',
+};
 const STATUS_LABEL = { pending: 'รอรับเรื่อง', in_progress: 'กำลังซ่อม', resolved: 'แก้ไขแล้ว' };
 const STATUS_COLOR = { pending: '#d97706', in_progress: '#2563eb', resolved: '#16a34a' };
 

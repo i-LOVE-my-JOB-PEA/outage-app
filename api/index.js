@@ -48,7 +48,72 @@ const fromRow = (r) => ({
   id: r.id, code: r.code, type: r.type, description: r.description, address: r.address,
   lat: r.lat, lng: r.lng, reporterName: r.reporter_name, reporterPhone: r.reporter_phone,
   status: r.status, crew: r.crew, createdAt: r.created_at, updatedAt: r.updated_at, history: r.history,
+  cause: r.cause || '', materials: r.materials || '', startedAt: r.started_at, resolvedAt: r.resolved_at,
+  duplicateOf: r.duplicate_of, consent: !!r.consent,
 });
+
+const CAUSES = ['', 'tree', 'lightning', 'aging', 'accident', 'animal', 'overload', 'planned', 'other'];
+const DUP_RADIUS_M = 150;      // เหตุชนิดเดียวกันที่ยังไม่ปิด ภายในระยะนี้ถือว่าซ้ำ
+const DUP_WINDOW_MS = 24 * 3600 * 1000;
+const RATE_LIMIT = 5;          // แจ้งได้สูงสุดกี่ครั้ง ต่อ IP ในช่วงเวลา
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+
+const distM = (a, b) => {
+  const R = 6371000, rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+const clientIpHash = (req) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  return crypto.createHash('sha256').update(ip + SECRET).digest('hex').slice(0, 16); // ไม่เก็บ IP จริง
+};
+const minutesBetween = (a, b) => (new Date(b) - new Date(a)) / 60000;
+const avg = (xs) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+
+function buildStats(rows) {
+  const unique = rows.filter((o) => !o.duplicateOf);
+  const count = (arr, key) => arr.reduce((m, o) => { const k = key(o); if (k) m[k] = (m[k] || 0) + 1; return m; }, {});
+  const dayKey = (iso) => new Date(new Date(iso).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10); // เวลาไทย
+  const daily = {};
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  rows.forEach((o) => { if (new Date(o.createdAt) >= cutoff) { const k = dayKey(o.createdAt); daily[k] = (daily[k] || 0) + 1; } });
+  const cells = {};
+  rows.forEach((o) => {
+    const k = o.lat.toFixed(2) + ',' + o.lng.toFixed(2); // ช่องตารางประมาณ 1.1 กม.
+    (cells[k] ||= { lat: +o.lat.toFixed(2) + 0.005, lng: +o.lng.toFixed(2) + 0.005, count: 0 }).count++;
+  });
+  return {
+    total: rows.length,
+    uniqueIncidents: unique.length,
+    duplicates: rows.length - unique.length,
+    byStatus: count(unique, (o) => o.status),
+    byType: count(unique, (o) => o.type),
+    byCause: count(unique, (o) => o.cause),
+    avgResponseMin: avg(unique.filter((o) => o.startedAt).map((o) => minutesBetween(o.createdAt, o.startedAt))),
+    avgRepairMin: avg(unique.filter((o) => o.resolvedAt).map((o) => minutesBetween(o.createdAt, o.resolvedAt))),
+    daily,
+    hotspots: Object.values(cells).sort((a, b) => b.count - a.count).slice(0, 15),
+  };
+}
+
+const csvCell = (v) => {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // กันสูตร Excel
+  return '"' + s.replace(/"/g, '""') + '"';
+};
+function buildCsv(rows) {
+  const head = ['รหัส', 'ประเภท', 'สถานะ', 'ที่อยู่', 'ละติจูด', 'ลองจิจูด', 'สาเหตุ', 'ทีมช่าง', 'วัสดุที่ใช้', 'ซ้ำกับ id',
+    'แจ้งเมื่อ', 'เริ่มซ่อมเมื่อ', 'ซ่อมเสร็จเมื่อ', 'นาทีถึงเริ่มซ่อม', 'นาทีรวมจนเสร็จ', 'ผู้แจ้ง', 'เบอร์โทร', 'รายละเอียด'];
+  const lines = rows.map((o) => [
+    o.code, o.type, o.status, o.address, o.lat, o.lng, o.cause, o.crew, o.materials, o.duplicateOf ?? '',
+    o.createdAt, o.startedAt ?? '', o.resolvedAt ?? '',
+    o.startedAt ? Math.round(minutesBetween(o.createdAt, o.startedAt)) : '',
+    o.resolvedAt ? Math.round(minutesBetween(o.createdAt, o.resolvedAt)) : '',
+    o.reporterName, o.reporterPhone, o.description,
+  ].map(csvCell).join(','));
+  return '﻿' + [head.map(csvCell).join(','), ...lines].join('\r\n');
+}
 
 const clean = (v, n) => String(v ?? '').trim().slice(0, n);
 const publicView = (o) => ({
@@ -77,6 +142,14 @@ module.exports = async (req, res) => {
       return send(res, 200, { token: makeToken() });
     }
 
+    if (m === 'GET' && (parts[1] === 'stats' || parts[1] === 'export')) {
+      if (!isStaff(req)) return send(res, 401, { error: 'ต้องเข้าสู่ระบบเจ้าหน้าที่' });
+      const rows = (await sb('outages?select=*&order=id.desc&limit=5000')).map(fromRow);
+      if (parts[1] === 'stats') return send(res, 200, buildStats(rows));
+      res.status(200).setHeader('Content-Type', 'text/csv; charset=utf-8').send(buildCsv(rows));
+      return;
+    }
+
     if (parts[1] === 'outages') {
       if (m === 'GET' && !parts[2]) {
         const staff = isStaff(req);
@@ -94,15 +167,32 @@ module.exports = async (req, res) => {
         if (!TYPES.includes(b.type)) return send(res, 400, { error: 'ประเภทไม่ถูกต้อง' });
         const address = clean(b.address, 200);
         if (!address) return send(res, 400, { error: 'กรุณากรอกที่อยู่/จุดสังเกต' });
+        const reporterName = clean(b.reporterName, 100), reporterPhone = clean(b.reporterPhone, 20);
+        if ((reporterName || reporterPhone) && b.consent !== true) {
+          return send(res, 400, { error: 'กรุณายินยอมให้เก็บชื่อและเบอร์โทร หรือเว้นว่างไว้' });
+        }
         const now = new Date().toISOString();
+
+        // กันสแปม: จำกัดจำนวนการแจ้งต่อ IP (เก็บเฉพาะค่าแฮช)
+        const ipHash = clientIpHash(req);
+        const since = encodeURIComponent(new Date(Date.now() - RATE_WINDOW_MS).toISOString());
+        const recent = await sb(`outages?select=id&ip_hash=eq.${ipHash}&created_at=gte.${since}&limit=${RATE_LIMIT}`);
+        if (recent.length >= RATE_LIMIT) return send(res, 429, { error: 'แจ้งถี่เกินไป กรุณารอสักครู่แล้วลองใหม่' });
+
+        // ตรวจเหตุซ้ำ: ชนิดเดียวกัน ยังไม่ปิด ภายใน 150 ม. / 24 ชม.
+        const dupSince = encodeURIComponent(new Date(Date.now() - DUP_WINDOW_MS).toISOString());
+        const open = await sb(`outages?select=id,code,lat,lng&type=eq.${b.type}&status=neq.resolved&duplicate_of=is.null&created_at=gte.${dupSince}&limit=200`);
+        const near = open.find((o) => distM({ lat, lng }, o) <= DUP_RADIUS_M);
+
         const [row] = await sb('outages', { method: 'POST', body: {
           code: 'PW' + crypto.randomBytes(3).toString('hex').toUpperCase(),
           type: b.type, description: clean(b.description, 500), address, lat, lng,
-          reporter_name: clean(b.reporterName, 100), reporter_phone: clean(b.reporterPhone, 20),
+          reporter_name: reporterName, reporter_phone: reporterPhone, consent: b.consent === true,
+          ip_hash: ipHash, duplicate_of: near ? near.id : null,
           status: 'pending', crew: '', created_at: now, updated_at: now,
           history: [{ status: 'pending', note: 'รับเรื่องแล้ว', public: true, at: now }],
         } });
-        return send(res, 201, publicView(fromRow(row)));
+        return send(res, 201, { ...publicView(fromRow(row)), alreadyReported: !!near });
       }
       if (m === 'PATCH' && parts[2]) {
         if (!isStaff(req)) return send(res, 401, { error: 'ต้องเข้าสู่ระบบเจ้าหน้าที่' });
@@ -116,7 +206,18 @@ module.exports = async (req, res) => {
         const statusChanged = b.status && b.status !== o.status;
         const patch = { updated_at: now };
         if (b.crew !== undefined) patch.crew = clean(b.crew, 100);
-        if (statusChanged) patch.status = b.status;
+        if (b.materials !== undefined) patch.materials = clean(b.materials, 300);
+        if (b.cause !== undefined) {
+          if (!CAUSES.includes(b.cause)) return send(res, 400, { error: 'สาเหตุไม่ถูกต้อง' });
+          patch.cause = b.cause;
+        }
+        if (b.unmerge === true) patch.duplicate_of = null;
+        if (statusChanged) {
+          patch.status = b.status;
+          if (b.status === 'in_progress' && !o.startedAt) patch.started_at = now;
+          if (b.status === 'resolved') { patch.resolved_at = now; if (!o.startedAt) patch.started_at = now; }
+          if (b.status !== 'resolved') patch.resolved_at = null; // เปิดงานใหม่
+        }
         if (statusChanged || b.note) {
           patch.history = [...o.history, { status: patch.status || o.status, note: clean(b.note, 300), public: b.publicNote !== false, at: now }];
         }

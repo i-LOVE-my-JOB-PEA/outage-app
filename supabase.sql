@@ -13,8 +13,17 @@ create table outages (
   crew text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  history jsonb not null default '[]'
+  history jsonb not null default '[]',
+  cause text not null default '',
+  materials text not null default '',
+  started_at timestamptz,
+  resolved_at timestamptz,
+  duplicate_of bigint,
+  ip_hash text not null default '',
+  consent boolean not null default false
 );
+create index outages_status_created_idx on outages (status, created_at desc);
+create index outages_ip_created_idx on outages (ip_hash, created_at desc);
 
 -- เปิด RLS และไม่สร้าง policy = เข้าถึงได้เฉพาะผ่าน service key ของเซิร์ฟเวอร์เท่านั้น
 alter table outages enable row level security;
