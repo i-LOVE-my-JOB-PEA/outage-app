@@ -30,7 +30,8 @@ async function sb(pathAndQuery, { method = 'GET', body } = {}) {
     method,
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
-      Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY,
+      // key รุ่นใหม่ (sb_secret_...) ไม่ใช่ JWT ห้ามส่งใน Authorization; key รุ่นเก่า (eyJ...) ต้องส่ง
+      ...(SUPABASE_SERVICE_KEY.startsWith('eyJ') ? { Authorization: 'Bearer ' + SUPABASE_SERVICE_KEY } : {}),
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
     },
