@@ -69,6 +69,27 @@ function timeline(o) {
     `<li>${fmt(h.at)} — ${STATUS_LABEL[h.status]}${h.note ? ': ' + esc(h.note) : ''}</li>`).join('') + '</ul>';
 }
 
+// ---- วางแผนและนำทาง ----
+const PRIORITY_LABEL = { urgent: 'เร่งด่วนมาก', high: 'สูง', normal: 'ปกติ', low: 'ต่ำ' };
+const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+// เปิด Google Maps นำทางไปจุดเกิดเหตุ (เริ่มจากตำแหน่งปัจจุบันของเครื่อง)
+const navUrl = (o) => `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${o.lat},${o.lng}`;
+// เส้นทางหลายจุด: จุดสุดท้ายเป็นปลายทาง ที่เหลือเป็นจุดแวะ (รองรับสูงสุด 10 จุด)
+function routeUrl(list) {
+  const stops = list.slice(0, 10).map((o) => `${o.lat},${o.lng}`);
+  const dest = stops.pop();
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + dest +
+    (stops.length ? '&waypoints=' + encodeURIComponent(stops.join('|')) : '');
+}
+// ISO -> ค่าสำหรับ <input type="datetime-local"> ตามเวลาของเครื่อง
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 // รหัสติดตามที่เคยแจ้งจากเครื่องนี้ (เก็บในเบราว์เซอร์เท่านั้น)
 const MY_KEY = 'myReports';
 function myCodes() {

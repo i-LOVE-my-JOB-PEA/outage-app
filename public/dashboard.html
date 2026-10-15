@@ -40,6 +40,14 @@
     </section>
 
     <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">แผนงานซ่อม (เหตุที่ยังไม่ปิด)</h2>
+        <a href="/staff">ไปหน้าบันทึกงานซ่อมเพื่อวางแผน →</a>
+      </div>
+      <div class="stats" id="plan"></div>
+    </section>
+
+    <section class="card">
       <h2>ประสิทธิภาพการซ่อม</h2>
       <div class="stats" id="kpi"></div>
     </section>
@@ -116,6 +124,11 @@ async function load() {
     ['เหตุทั้งหมด', s.uniqueIncidents, '#374151'],
     ...Object.keys(STATUS_LABEL).map((k) => [STATUS_LABEL[k], by[k] || 0, STATUS_COLOR[k]]),
     ['แจ้งซ้ำที่รวมแล้ว', s.duplicates, '#6b7280'],
+  ]);
+  const p = s.plan;
+  $('plan').innerHTML = tiles([
+    ['ยังไม่วางแผน', p.unplanned, '#d97706'], ['เกินกำหนดแผน', p.overdue, p.overdue ? '#dc2626' : '#374151'],
+    ['วันนี้', p.today, '#2563eb'], ['วันถัดไป', p.upcoming, '#16a34a'],
   ]);
   $('kpi').innerHTML = tiles([
     ['เวลาเฉลี่ยจากแจ้งถึงเริ่มซ่อม', fmtMin(s.avgResponseMin), '#2563eb'],

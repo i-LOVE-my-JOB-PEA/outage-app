@@ -41,6 +41,12 @@ th { color:var(--muted); font-weight:500; border-top:0; }
 .tablewrap { overflow-x:auto; }
 .hidden { display:none !important; }
 
+/* ---------- แผนซ่อม ---------- */
+.stat[data-view] { cursor:pointer; user-select:none; }
+.stat.on { outline:2px solid var(--brand); }
+tr.overdue td:first-child { box-shadow:inset 3px 0 #dc2626; }
+a.navlink { display:inline-block; margin-top:6px; padding:6px 12px; border:1px solid var(--line); border-radius:99px; color:var(--text); text-decoration:none; font-size:.9rem; }
+
 /* ---------- มือถือ ---------- */
 input[type=checkbox] { min-height:0; }
 @media (max-width:700px) {
@@ -61,4 +67,5 @@ input[type=checkbox] { min-height:0; }
   table.stack td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:.78rem; }
   table.stack td input, table.stack td select { min-width:0 !important; width:100%; }
   table.stack td .save { width:100%; }
+  a.navlink { display:block; text-align:center; padding:12px; }
 }

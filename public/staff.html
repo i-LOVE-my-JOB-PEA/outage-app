@@ -41,9 +41,14 @@
           <option value="in_progress">กำลังซ่อม</option><option value="resolved">แก้ไขแล้ว</option>
         </select>
       </div>
+      <div id="planTiles" class="stats" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-bottom:10px"></div>
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <span class="muted" id="viewNote"></span>
+        <a href="#" id="routeAll" class="navlink" style="margin:0">🧭 นำทางงานวันนี้ (เรียงตามความเร่งด่วน)</a>
+      </div>
       <datalist id="crewList"></datalist><datalist id="matList"></datalist>
       <div class="tablewrap"><table class="stack">
-        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
+        <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>วางแผน / นำทาง</th><th>บันทึก</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
     </section>
@@ -54,7 +59,7 @@
 <script src="/common.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let data = [], map, layer;
+let data = [], map, layer, view = 'all';
 
 const gate = staffGate(() => {
   if (!map) { map = makeMap('smap'); layer = L.layerGroup().addTo(map); }
@@ -73,17 +78,46 @@ function usedValues(key) {
   return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([v]) => `<option value="${esc(v)}">`).join('');
 }
 
+// ---- มุมมองแผนซ่อม ----
+const localDay = (t) => { const d = new Date(t); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
+const isOpen = (o) => o.status !== 'resolved' && !o.duplicateOf;
+const isOverdue = (o) => isOpen(o) && o.plannedAt && new Date(o.plannedAt) < Date.now();
+const PLAN_VIEWS = {
+  all: ['ทั้งหมด', () => true],
+  unplanned: ['ยังไม่วางแผน', (o) => isOpen(o) && !o.plannedAt],
+  overdue: ['เกินกำหนด', isOverdue],
+  today: ['วันนี้', (o) => isOpen(o) && o.plannedAt && localDay(o.plannedAt) === localDay(Date.now())],
+  week: ['7 วันข้างหน้า', (o) => isOpen(o) && o.plannedAt && new Date(o.plannedAt) >= Date.now() && new Date(o.plannedAt) < Date.now() + 7 * 864e5],
+};
+const byPlan = (a, b) => (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) ||
+  (new Date(a.plannedAt || 8e15) - new Date(b.plannedAt || 8e15));
+// งานของวันนี้ + ที่เกินกำหนด สำหรับนำทางรวม
+const todayJobs = () => data.filter((o) => isOpen(o) && o.plannedAt &&
+  (new Date(o.plannedAt) < Date.now() || localDay(o.plannedAt) === localDay(Date.now()))).sort(byPlan);
+
+function renderTiles() {
+  $('planTiles').innerHTML = Object.entries(PLAN_VIEWS).map(([k, [label, fn]]) => {
+    const n = data.filter((o) => !o.duplicateOf && fn(o)).length;
+    const color = k === 'overdue' && n ? '#dc2626' : 'inherit';
+    return `<div class="stat ${k === view ? 'on' : ''}" data-view="${k}" role="button" tabindex="0"><b style="color:${color}">${n}</b>${label}</div>`;
+  }).join('');
+}
+
 function render() {
   const f = $('filter').value;
+  renderTiles();
   layer.clearLayers();
   data.filter((o) => o.status !== 'resolved').forEach((o) =>
-    pin(o).addTo(layer).bindPopup(`<b>${esc(o.code)}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}`));
+    pin(o).addTo(layer).bindPopup(`<b>${esc(o.code)}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}<br><a href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง</a>`));
 
   $('crewList').innerHTML = usedValues('crew');
   $('matList').innerHTML = usedValues('materials');
   const dupOf = (o) => { const p = data.find((x) => x.id === o.duplicateOf); return p ? p.code : '#' + o.duplicateOf; };
-  $('rows').innerHTML = data.filter((o) => !f || o.status === f).map((o) => `
-    <tr data-id="${o.id}">
+  const shownRows = data.filter((o) => (!f || o.status === f) && PLAN_VIEWS[view][1](o));
+  if (view !== 'all') shownRows.sort(byPlan);
+  $('viewNote').textContent = view === 'all' ? '' : `กำลังแสดง: ${PLAN_VIEWS[view][0]} (เรียงตามความเร่งด่วน แล้วตามวันเวลา)`;
+  $('rows').innerHTML = shownRows.map((o) => `
+    <tr data-id="${o.id}" class="${isOverdue(o) ? 'overdue' : ''}">
       <td data-label="รหัส / เวลา"><b>${esc(o.code)}</b><div class="muted">${fmt(o.createdAt)}</div>
         ${o.duplicateOf ? `<div class="muted">⚠ ซ้ำกับ ${esc(dupOf(o))} <a href="#" class="unmerge">แยกเป็นเหตุใหม่</a></div>` : ''}</td>
       <td data-label="ปัญหา / ที่อยู่">${TYPE_LABEL[o.type]}<div>${esc(o.address)}</div><div class="muted">${esc(o.description)}</div></td>
@@ -93,9 +127,16 @@ function render() {
       <td data-label="ทีมช่าง / สาเหตุ / วัสดุ"><input class="crew" list="crewList" value="${esc(o.crew)}" placeholder="ชื่อทีม (เลือกจากที่เคยกรอก)" style="min-width:110px">
         <select class="cause" style="margin-top:4px" title="ต้องระบุก่อนปิดงาน">${causeOpt(o.cause)}</select>
         <input class="materials" list="matList" value="${esc(o.materials)}" placeholder="วัสดุที่ใช้ (เลือกจากที่เคยกรอก)" maxlength="300" style="margin-top:4px;min-width:110px"></td>
+      <td data-label="วางแผน / นำทาง">
+        <select class="prio" aria-label="ความเร่งด่วน">${Object.entries(PRIORITY_LABEL).map(([k, v]) =>
+          `<option value="${k}" ${k === o.priority ? 'selected' : ''}>ความเร่งด่วน: ${v}</option>`).join('')}</select>
+        <input type="datetime-local" class="planned" value="${toLocalInput(o.plannedAt)}" aria-label="วันเวลาที่วางแผนเข้าซ่อม" style="margin-top:4px">
+        <input class="planNote" value="${esc(o.planNote)}" placeholder="บันทึกแผน (ภายใน)" maxlength="300" style="margin-top:4px;min-width:130px">
+        ${isOverdue(o) ? '<div style="color:#dc2626;font-size:.85rem">⏰ เกินกำหนดแผน</div>' : ''}
+        <a class="navlink" href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง</a></td>
       <td data-label="บันทึกให้ประชาชนเห็น"><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
       <td><button class="save">บันทึก</button></td>
-    </tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการ</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">ไม่มีรายการ</td></tr>';
 }
 
 $('rows').onclick = async (e) => {
@@ -111,7 +152,9 @@ $('rows').onclick = async (e) => {
   try {
     const body = isUnmerge ? { unmerge: true } : {
       status: tr.querySelector('.st').value, crew: tr.querySelector('.crew').value, note: tr.querySelector('.note').value,
-      cause: tr.querySelector('.cause').value, materials: tr.querySelector('.materials').value };
+      cause: tr.querySelector('.cause').value, materials: tr.querySelector('.materials').value,
+      priority: tr.querySelector('.prio').value, planNote: tr.querySelector('.planNote').value,
+      plannedAt: tr.querySelector('.planned').value ? new Date(tr.querySelector('.planned').value).toISOString() : '' };
     await api('/api/outages/' + tr.dataset.id, { method: 'PATCH', body }, gate.token());
     await load();
   } catch (err) {
@@ -121,6 +164,16 @@ $('rows').onclick = async (e) => {
   e.target.disabled = false;
 };
 $('filter').onchange = render;
+const pickView = (e) => { const t = e.target.closest('[data-view]'); if (t) { view = t.dataset.view; render(); } };
+$('planTiles').onclick = pickView;
+$('planTiles').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickView(e); } };
+$('routeAll').onclick = (e) => {
+  e.preventDefault();
+  const jobs = todayJobs();
+  if (!jobs.length) return alert('ยังไม่มีงานที่วางแผนไว้สำหรับวันนี้หรือเกินกำหนด');
+  if (jobs.length > 10) alert('Google Maps รองรับสูงสุด 10 จุด จะนำทางเฉพาะ 10 งานแรกตามความเร่งด่วน');
+  window.open(routeUrl(jobs), '_blank', 'noopener');
+};
 
 async function load() {
   data = await api('/api/outages', {}, gate.token());

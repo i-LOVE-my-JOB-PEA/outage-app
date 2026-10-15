@@ -20,7 +20,10 @@ create table outages (
   resolved_at timestamptz,
   duplicate_of bigint,
   ip_hash text not null default '',
-  consent boolean not null default false
+  consent boolean not null default false,
+  planned_at timestamptz,
+  priority text not null default 'normal',
+  plan_note text not null default ''
 );
 create index outages_status_created_idx on outages (status, created_at desc);
 create index outages_ip_created_idx on outages (ip_hash, created_at desc);

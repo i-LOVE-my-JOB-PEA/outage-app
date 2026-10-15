@@ -50,7 +50,10 @@ const fromRow = (r) => ({
   status: r.status, crew: r.crew, createdAt: r.created_at, updatedAt: r.updated_at, history: r.history,
   cause: r.cause || '', materials: r.materials || '', startedAt: r.started_at, resolvedAt: r.resolved_at,
   duplicateOf: r.duplicate_of, consent: !!r.consent,
+  plannedAt: r.planned_at, priority: r.priority || 'normal', planNote: r.plan_note || '',
 });
+
+const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
 
 const CAUSES = ['', 'tree', 'lightning', 'aging', 'accident', 'animal', 'overload', 'planned', 'other'];
 const PUBLIC_LIST_LIMIT = 100;
@@ -72,6 +75,21 @@ const clientIpHash = (req) => {
 };
 const minutesBetween = (a, b) => (new Date(b) - new Date(a)) / 60000;
 const avg = (xs) => (xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+
+// สรุปแผนซ่อมของเหตุที่ยังไม่ปิด (เวลาไทย)
+function buildPlanSummary(unique) {
+  const thaiDay = (ms) => new Date(ms + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const now = Date.now(), today = thaiDay(now);
+  const sum = { unplanned: 0, overdue: 0, today: 0, upcoming: 0 };
+  unique.filter((o) => o.status !== 'resolved').forEach((o) => {
+    if (!o.plannedAt) { sum.unplanned++; return; }
+    const t = new Date(o.plannedAt).getTime();
+    if (t < now) sum.overdue++;
+    else if (thaiDay(t) === today) sum.today++;
+    else sum.upcoming++;
+  });
+  return sum;
+}
 
 function buildStats(rows) {
   const unique = rows.filter((o) => !o.duplicateOf);
@@ -107,6 +125,7 @@ function buildStats(rows) {
     byCause: count(unique, (o) => o.cause),
     avgResponseMin: avg(unique.filter((o) => o.startedAt).map((o) => minutesBetween(o.createdAt, o.startedAt))),
     avgRepairMin: avg(unique.filter((o) => o.resolvedAt).map((o) => minutesBetween(o.createdAt, o.resolvedAt))),
+    plan: buildPlanSummary(unique),
     daily, byHour, byWeekday,
     hotspots: Object.values(cells).sort((a, b) => b.count - a.count).slice(0, 15)
       .map((c) => ({ lat: c.lat, lng: c.lng, count: c.count, address: c.address, topCause: top(c.causes), topType: top(c.types) })),
@@ -120,13 +139,15 @@ const csvCell = (v) => {
 };
 function buildCsv(rows) {
   const head = ['รหัส', 'ประเภท', 'สถานะ', 'ที่อยู่', 'ละติจูด', 'ลองจิจูด', 'สาเหตุ', 'ทีมช่าง', 'วัสดุที่ใช้', 'ซ้ำกับ id',
-    'แจ้งเมื่อ', 'เริ่มซ่อมเมื่อ', 'ซ่อมเสร็จเมื่อ', 'นาทีถึงเริ่มซ่อม', 'นาทีรวมจนเสร็จ', 'ผู้แจ้ง', 'เบอร์โทร', 'รายละเอียด'];
+    'แจ้งเมื่อ', 'เริ่มซ่อมเมื่อ', 'ซ่อมเสร็จเมื่อ', 'นาทีถึงเริ่มซ่อม', 'นาทีรวมจนเสร็จ', 'ผู้แจ้ง', 'เบอร์โทร', 'รายละเอียด',
+    'วางแผนซ่อมเมื่อ', 'ความเร่งด่วน', 'บันทึกแผน'];
   const lines = rows.map((o) => [
     o.code, o.type, o.status, o.address, o.lat, o.lng, o.cause, o.crew, o.materials, o.duplicateOf ?? '',
     o.createdAt, o.startedAt ?? '', o.resolvedAt ?? '',
     o.startedAt ? Math.round(minutesBetween(o.createdAt, o.startedAt)) : '',
     o.resolvedAt ? Math.round(minutesBetween(o.createdAt, o.resolvedAt)) : '',
     o.reporterName, o.reporterPhone, o.description,
+    o.plannedAt ?? '', o.priority, o.planNote,
   ].map(csvCell).join(','));
   return '﻿' + [head.map(csvCell).join(','), ...lines].join('\r\n');
 }
@@ -234,6 +255,19 @@ module.exports = async (req, res) => {
         // ปิดงานต้องระบุสาเหตุ (ใช้ค่าใหม่ที่ส่งมา หรือค่าที่เคยบันทึกไว้)
         if (b.status === 'resolved' && !(patch.cause ?? o.cause)) {
           return send(res, 400, { error: 'กรุณาระบุสาเหตุก่อนปิดงาน (สถานะ "แก้ไขแล้ว")' });
+        }
+        if (b.priority !== undefined) {
+          if (!PRIORITIES.includes(b.priority)) return send(res, 400, { error: 'ระดับความเร่งด่วนไม่ถูกต้อง' });
+          patch.priority = b.priority;
+        }
+        if (b.planNote !== undefined) patch.plan_note = clean(b.planNote, 300);
+        if (b.plannedAt !== undefined) {
+          if (b.plannedAt === '' || b.plannedAt === null) patch.planned_at = null;
+          else {
+            const d = new Date(b.plannedAt);
+            if (Number.isNaN(d.getTime())) return send(res, 400, { error: 'วันเวลาที่วางแผนไม่ถูกต้อง' });
+            patch.planned_at = d.toISOString();
+          }
         }
         if (b.unmerge === true) patch.duplicate_of = null;
         if (statusChanged) {
