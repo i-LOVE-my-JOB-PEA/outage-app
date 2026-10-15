@@ -52,7 +52,9 @@
       </section>
       <section class="card">
         <h2>เหตุที่แจ้งล่าสุด</h2>
+        <p class="muted" style="margin:-6px 0 6px">เหตุที่ยังไม่ปิด และที่แก้ไขแล้วภายใน 48 ชั่วโมง</p>
         <div id="list"><span class="muted">กำลังโหลด…</span></div>
+        <button type="button" class="sec hidden" id="more" style="width:100%;margin-top:8px">ดูเพิ่ม</button>
       </section>
     </div>
   </div>
@@ -87,14 +89,21 @@ function timeline(o) {
     `<li>${fmt(h.at)} — ${STATUS_LABEL[h.status]}${h.note ? ': ' + esc(h.note) : ''}</li>`).join('') + '</ul>';
 }
 
-async function load() {
-  const list = await api('/api/outages');
-  overview.clearLayers();
-  list.filter((o) => o.status !== 'resolved').forEach((o) =>
-    pin(o).addTo(overview).bindPopup(`${TYPE_LABEL[o.type]}<br>${esc(o.address)}<br>${STATUS_LABEL[o.status]}`));
-  $('list').innerHTML = list.slice(0, 8).map((o) => `
+let recent = [], visible = 8;
+function renderList() {
+  $('list').innerHTML = recent.slice(0, visible).map((o) => `
     <div class="item"><div class="row" style="justify-content:space-between"><b>${TYPE_LABEL[o.type]}</b>${badge(o.status)}</div>
     <div>${esc(o.address)}</div><div class="muted">${fmt(o.createdAt)}</div></div>`).join('') || '<span class="muted">ยังไม่มีรายการ</span>';
+  $('more').classList.toggle('hidden', visible >= recent.length);
+}
+$('more').onclick = () => { visible += 10; renderList(); };
+
+async function load() {
+  recent = await api('/api/outages');
+  overview.clearLayers();
+  recent.filter((o) => o.status !== 'resolved').forEach((o) =>
+    pin(o).addTo(overview).bindPopup(`${TYPE_LABEL[o.type]}<br>${esc(o.address)}<br>${STATUS_LABEL[o.status]}`));
+  renderList();
 }
 
 $('form').onsubmit = async (e) => {

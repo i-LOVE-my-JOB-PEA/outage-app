@@ -42,7 +42,7 @@
         </select>
       </div>
       <datalist id="crewList"></datalist><datalist id="matList"></datalist>
-      <div class="tablewrap"><table>
+      <div class="tablewrap"><table class="stack">
         <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>บันทึก</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
@@ -84,16 +84,16 @@ function render() {
   const dupOf = (o) => { const p = data.find((x) => x.id === o.duplicateOf); return p ? p.code : '#' + o.duplicateOf; };
   $('rows').innerHTML = data.filter((o) => !f || o.status === f).map((o) => `
     <tr data-id="${o.id}">
-      <td><b>${esc(o.code)}</b><div class="muted">${fmt(o.createdAt)}</div>
+      <td data-label="รหัส / เวลา"><b>${esc(o.code)}</b><div class="muted">${fmt(o.createdAt)}</div>
         ${o.duplicateOf ? `<div class="muted">⚠ ซ้ำกับ ${esc(dupOf(o))} <a href="#" class="unmerge">แยกเป็นเหตุใหม่</a></div>` : ''}</td>
-      <td>${TYPE_LABEL[o.type]}<div>${esc(o.address)}</div><div class="muted">${esc(o.description)}</div></td>
-      <td>${esc(o.reporterName) || '-'}<div class="muted">${esc(o.reporterPhone)}</div></td>
-      <td><select class="st">${opt(o.status)}</select>
+      <td data-label="ปัญหา / ที่อยู่">${TYPE_LABEL[o.type]}<div>${esc(o.address)}</div><div class="muted">${esc(o.description)}</div></td>
+      <td data-label="ผู้แจ้ง (ชื่อเล่น / เบอร์)">${esc(o.reporterName) || '-'}<div class="muted">${esc(o.reporterPhone)}</div></td>
+      <td data-label="สถานะ"><select class="st">${opt(o.status)}</select>
         ${o.startedAt ? `<div class="muted">เริ่ม ${fmt(o.startedAt)}</div>` : ''}${o.resolvedAt ? `<div class="muted">เสร็จ ${fmt(o.resolvedAt)}</div>` : ''}</td>
-      <td><input class="crew" list="crewList" value="${esc(o.crew)}" placeholder="ชื่อทีม (เลือกจากที่เคยกรอก)" style="min-width:110px">
+      <td data-label="ทีมช่าง / สาเหตุ / วัสดุ"><input class="crew" list="crewList" value="${esc(o.crew)}" placeholder="ชื่อทีม (เลือกจากที่เคยกรอก)" style="min-width:110px">
         <select class="cause" style="margin-top:4px" title="ต้องระบุก่อนปิดงาน">${causeOpt(o.cause)}</select>
         <input class="materials" list="matList" value="${esc(o.materials)}" placeholder="วัสดุที่ใช้ (เลือกจากที่เคยกรอก)" maxlength="300" style="margin-top:4px;min-width:110px"></td>
-      <td><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
+      <td data-label="บันทึกให้ประชาชนเห็น"><input class="note" placeholder="บันทึกให้ประชาชนเห็น" style="min-width:150px"></td>
       <td><button class="save">บันทึก</button></td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">ไม่มีรายการ</td></tr>';
 }

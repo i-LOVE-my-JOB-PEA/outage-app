@@ -56,7 +56,7 @@
       <h2>พื้นที่ไหนดับบ่อย</h2>
       <div id="dmap"></div>
       <p class="muted" style="margin:8px 0">วงกลมสีส้ม = พื้นที่ที่เกิดเหตุตั้งแต่ 2 ครั้งขึ้นไป (ตารางประมาณ 1 กม.)</p>
-      <div class="tablewrap"><table>
+      <div class="tablewrap"><table class="stack">
         <thead><tr><th>พื้นที่ (ตัวอย่างที่อยู่)</th><th>จำนวนเหตุ</th><th>สาเหตุหลัก</th><th>ปัญหาที่พบบ่อย</th><th></th></tr></thead>
         <tbody id="hotRows"></tbody>
       </table></div>
@@ -133,9 +133,9 @@ async function load() {
   $('daily').innerHTML = columns(days.map((d) => s.daily[d] || 0), (i) => days[i], 80);
 
   $('hotRows').innerHTML = s.hotspots.map((h) => `<tr>
-    <td>${esc(h.address)}</td><td><b>${h.count}</b></td>
-    <td>${h.topCause ? esc(CAUSE_LABEL[h.topCause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
-    <td>${esc(TYPE_LABEL[h.topType] || '')}</td>
+    <td data-label="พื้นที่">${esc(h.address)}</td><td data-label="จำนวนเหตุ"><b>${h.count}</b></td>
+    <td data-label="สาเหตุหลัก">${h.topCause ? esc(CAUSE_LABEL[h.topCause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
+    <td data-label="ปัญหาที่พบบ่อย">${esc(TYPE_LABEL[h.topType] || '')}</td>
     <td><a href="#" class="goto" data-lat="${h.lat}" data-lng="${h.lng}">ดูบนแผนที่</a></td></tr>`).join('') ||
     '<tr><td colspan="5" class="muted">ยังไม่มีข้อมูล</td></tr>';
   hot.clearLayers();

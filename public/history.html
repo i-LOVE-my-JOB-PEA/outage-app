@@ -58,7 +58,7 @@
         <h2 style="margin:0">รายการ</h2>
         <span class="muted" id="summary"></span>
       </div>
-      <div class="tablewrap"><table>
+      <div class="tablewrap"><table class="stack">
         <thead><tr><th>รหัส</th><th>วันที่แจ้ง</th><th>เริ่มซ่อม</th><th>ซ่อมเสร็จ</th><th>ใช้เวลารวม</th><th>ที่อยู่ / ปัญหา</th><th>สาเหตุ</th><th>ทีมช่าง / วัสดุ</th><th>สถานะ</th></tr></thead>
         <tbody id="rows"></tbody>
       </table></div>
@@ -109,13 +109,13 @@ function render() {
   shown = all;
   $('summary').textContent = `พบ ${all.length} รายการ` + (all.length > LIMIT ? ` (แสดง ${LIMIT} รายการแรก — ส่งออก CSV เพื่อดูทั้งหมด)` : '');
   $('rows').innerHTML = all.slice(0, LIMIT).map((o) => `<tr>
-    <td><b>${esc(o.code)}</b>${o.duplicateOf ? '<div class="muted">แจ้งซ้ำ</div>' : ''}</td>
-    <td>${dt(o.createdAt)}</td><td>${dt(o.startedAt)}</td><td>${dt(o.resolvedAt)}</td>
-    <td>${dur(o.createdAt, o.resolvedAt)}</td>
-    <td>${esc(o.address)}<div class="muted">${esc(TYPE_LABEL[o.type] || '')}${o.description ? ' · ' + esc(o.description) : ''}</div></td>
-    <td>${o.cause ? esc(CAUSE_LABEL[o.cause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
-    <td>${esc(o.crew) || '-'}<div class="muted">${esc(o.materials)}</div></td>
-    <td><span class="badge" style="background:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></td>
+    <td data-label="รหัส"><b>${esc(o.code)}</b>${o.duplicateOf ? '<div class="muted">แจ้งซ้ำ</div>' : ''}</td>
+    <td data-label="วันที่แจ้ง">${dt(o.createdAt)}</td><td data-label="เริ่มซ่อม">${dt(o.startedAt)}</td><td data-label="ซ่อมเสร็จ">${dt(o.resolvedAt)}</td>
+    <td data-label="ใช้เวลารวม">${dur(o.createdAt, o.resolvedAt)}</td>
+    <td data-label="ที่อยู่ / ปัญหา">${esc(o.address)}<div class="muted">${esc(TYPE_LABEL[o.type] || '')}${o.description ? ' · ' + esc(o.description) : ''}</div></td>
+    <td data-label="สาเหตุ">${o.cause ? esc(CAUSE_LABEL[o.cause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
+    <td data-label="ทีมช่าง / วัสดุ">${esc(o.crew) || '-'}<div class="muted">${esc(o.materials)}</div></td>
+    <td data-label="สถานะ"><span class="badge" style="background:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></td>
   </tr>`).join('') || '<tr><td colspan="9" class="muted">ไม่พบรายการตามเงื่อนไข</td></tr>';
 }
 

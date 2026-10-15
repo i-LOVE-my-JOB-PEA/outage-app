@@ -53,7 +53,9 @@ const fromRow = (r) => ({
 });
 
 const CAUSES = ['', 'tree', 'lightning', 'aging', 'accident', 'animal', 'overload', 'planned', 'other'];
-const DUP_RADIUS_M = 150;      // เหตุชนิดเดียวกันที่ยังไม่ปิด ภายในระยะนี้ถือว่าซ้ำ
+const PUBLIC_LIST_LIMIT = 100;
+const PUBLIC_RESOLVED_WINDOW_MS = 48 * 3600 * 1000;
+const DUP_RADIUS_M = 150;     // เหตุชนิดเดียวกันที่ยังไม่ปิด ภายในระยะนี้ถือว่าซ้ำ
 const DUP_WINDOW_MS = 24 * 3600 * 1000;
 const RATE_LIMIT = 5;          // แจ้งได้สูงสุดกี่ครั้ง ต่อ IP ในช่วงเวลา
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -167,8 +169,12 @@ module.exports = async (req, res) => {
     if (parts[1] === 'outages') {
       if (m === 'GET' && !parts[2]) {
         const staff = isStaff(req);
-        const list = (await sb(`outages?select=*&order=id.desc&limit=${staff ? 5000 : 500}`)).map(fromRow);
-        return send(res, 200, staff ? list : list.map(publicView));
+        if (staff) return send(res, 200, (await sb('outages?select=*&order=id.desc&limit=5000')).map(fromRow));
+        // ประชาชนเห็นเฉพาะเหตุที่ยังไม่ปิด + ที่ปิดภายใน 48 ชม. (สูงสุด 100 รายการ)
+        const cutoff = new Date(Date.now() - PUBLIC_RESOLVED_WINDOW_MS).toISOString();
+        const orFilter = encodeURIComponent(`(status.neq.resolved,resolved_at.gte.${cutoff})`);
+        const rows = await sb(`outages?select=*&or=${orFilter}&order=id.desc&limit=${PUBLIC_LIST_LIMIT}`);
+        return send(res, 200, rows.map(fromRow).map(publicView));
       }
       if (m === 'GET' && parts[2] === 'track') {
         const code = (url.searchParams.get('code') || '').toUpperCase();
