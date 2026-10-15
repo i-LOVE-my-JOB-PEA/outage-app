@@ -6,8 +6,8 @@ const crypto = require('node:crypto');
 
 const PORT = process.env.PORT || 3000;
 const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'admin1234';
-const DB_FILE = path.join(__dirname, 'data', 'outages.json');
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const DB_FILE = path.join(__dirname, '..', 'data', 'outages.json');
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const STATUSES = ['pending', 'in_progress', 'resolved'];
 const TYPES = ['power_out', 'wire_down', 'transformer', 'pole', 'flicker', 'other'];
 
