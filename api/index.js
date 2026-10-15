@@ -67,7 +67,10 @@ module.exports = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const parts = url.pathname.split('/').filter(Boolean); // ['api', ...]
     const m = req.method;
-    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    let b = {};
+    if (m !== 'GET' && m !== 'HEAD') { // GET ไม่มี body; การแตะ req.body อาจ throw ถ้า Content-Type เป็น JSON แต่ว่าง
+      try { if (req.body && typeof req.body === 'object') b = req.body; } catch { return send(res, 400, { error: 'ข้อมูลไม่ถูกต้อง' }); }
+    }
 
     if (m === 'POST' && parts[1] === 'login') {
       if (b.password !== STAFF_PASSWORD) return send(res, 401, { error: 'รหัสผ่านไม่ถูกต้อง' });

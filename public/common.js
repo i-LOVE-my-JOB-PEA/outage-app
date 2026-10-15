@@ -11,11 +11,11 @@ const fmt = (iso) => new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium'
 async function api(path, opts = {}, token) {
   const r = await fetch(path, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await r.json();
-  if (!r.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+  if (!r.ok) throw new Error((data.error || 'เกิดข้อผิดพลาด') + (data.detail ? ' [' + data.detail + ']' : ''));
   return data;
 }
 
