@@ -54,6 +54,8 @@ const fromRow = (r) => ({
 });
 
 const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
+// ความเร่งด่วนเริ่มต้นตามประเภทปัญหา (เจ้าหน้าที่แก้ไขภายหลังได้) — สายไฟขาดอันตรายต่อชีวิตจึงเร่งด่วนที่สุด
+const PRIORITY_BY_TYPE = { wire_down: 'urgent', transformer: 'high', pole: 'high', power_out: 'normal', flicker: 'low', other: 'normal' };
 
 const CAUSES = ['', 'tree', 'lightning', 'aging', 'accident', 'animal', 'overload', 'planned', 'other'];
 const PUBLIC_LIST_LIMIT = 100;
@@ -229,7 +231,7 @@ module.exports = async (req, res) => {
           code: 'PW' + crypto.randomBytes(3).toString('hex').toUpperCase(),
           type: b.type, description: clean(b.description, 500), address, lat, lng,
           reporter_name: reporterName, reporter_phone: reporterPhone, consent: true,
-          ip_hash: ipHash, duplicate_of: near ? near.id : null,
+          ip_hash: ipHash, duplicate_of: near ? near.id : null, priority: PRIORITY_BY_TYPE[b.type] || 'normal',
           status: 'pending', crew: '', created_at: now, updated_at: now,
           history: [{ status: 'pending', note: 'รับเรื่องแล้ว', public: true, at: now }],
         } });

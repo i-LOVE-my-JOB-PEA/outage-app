@@ -33,6 +33,26 @@
     <section class="card"><div id="smap"></div>
       <p class="muted" style="margin:8px 0 0">หมุดสี = เหตุที่ยังไม่ปิดงาน (ดูสถิติและพื้นที่ที่ไฟดับบ่อยที่หน้า "แดชบอร์ด/รายงาน")</p>
     </section>
+    <section class="card" id="planner">
+      <h2>วางแผนเส้นทางไปซ่อม</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">
+        <div><label for="pScope">งานที่จะจัด</label>
+          <select id="pScope"><option value="open">ทุกเหตุที่ยังไม่ปิดงาน</option><option value="due">เฉพาะงานที่วางแผนวันนี้ / เกินกำหนด</option></select></div>
+        <div><label for="pCrew">ทีมช่าง</label><select id="pCrew"></select></div>
+        <div><label for="pMode">เรียงลำดับตาม</label>
+          <select id="pMode"><option value="distance">📏 ระยะทาง — ใกล้ที่สุดก่อน</option><option value="priority">🚨 ความเร่งด่วน — เร่งด่วนมากก่อน</option></select></div>
+        <div><label for="pMax">จำนวนจุดสูงสุด (1–10)</label><input id="pMax" type="number" inputmode="numeric" min="1" max="10" value="10"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" class="sec" id="pGps">📍 เริ่มจากตำแหน่งปัจจุบัน</button>
+        <button type="button" class="sec" id="pPick">🗺️ เลือกจุดเริ่มบนแผนที่</button>
+        <button type="button" class="sec hidden" id="pClear">ล้างจุดเริ่ม</button>
+      </div>
+      <p class="muted" id="pStart" style="margin:6px 0">ยังไม่ได้ตั้งจุดเริ่ม (จะเริ่มที่งานเร่งด่วนที่สุด)</p>
+      <button type="button" id="pGo">จัดเส้นทาง</button>
+      <div id="pResult"></div>
+    </section>
+
     <section class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
         <h2 style="margin:0">รายการแจ้งเหตุ</h2>
@@ -42,10 +62,7 @@
         </select>
       </div>
       <div id="planTiles" class="stats" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-bottom:10px"></div>
-      <div class="row" style="justify-content:space-between;margin-bottom:8px">
-        <span class="muted" id="viewNote"></span>
-        <a href="#" id="routeAll" class="navlink" style="margin:0">🧭 นำทางงานวันนี้ (เรียงตามความเร่งด่วน)</a>
-      </div>
+      <div class="muted" id="viewNote" style="margin-bottom:8px"></div>
       <datalist id="crewList"></datalist><datalist id="matList"></datalist>
       <div class="tablewrap"><table class="stack">
         <thead><tr><th>รหัส / เวลา</th><th>ปัญหา / ที่อยู่</th><th>ผู้แจ้ง (ชื่อเล่น)</th><th>สถานะ</th><th>ทีมช่าง / ข้อมูลงานซ่อม</th><th>วางแผน / นำทาง</th><th>บันทึก</th><th></th></tr></thead>
@@ -59,10 +76,15 @@
 <script src="/common.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let data = [], map, layer, view = 'all';
+let data = [], map, layer, routeLayer, view = 'all';
+let start = null, startMode = null, startMarker = null, picking = false;
 
 const gate = staffGate(() => {
-  if (!map) { map = makeMap('smap'); layer = L.layerGroup().addTo(map); }
+  if (!map) {
+    map = makeMap('smap'); layer = L.layerGroup().addTo(map); routeLayer = L.layerGroup().addTo(map);
+    map.on('click', (e) => { if (picking) { picking = false; setStart(e.latlng.lat, e.latlng.lng, 'pick'); } });
+    restoreStart();
+  }
   setTimeout(() => map.invalidateSize(), 50);
   load();
 });
@@ -91,9 +113,7 @@ const PLAN_VIEWS = {
 };
 const byPlan = (a, b) => (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) ||
   (new Date(a.plannedAt || 8e15) - new Date(b.plannedAt || 8e15));
-// งานของวันนี้ + ที่เกินกำหนด สำหรับนำทางรวม
-const todayJobs = () => data.filter((o) => isOpen(o) && o.plannedAt &&
-  (new Date(o.plannedAt) < Date.now() || localDay(o.plannedAt) === localDay(Date.now()))).sort(byPlan);
+const isDue = (o) => isOpen(o) && o.plannedAt && (new Date(o.plannedAt) < Date.now() || localDay(o.plannedAt) === localDay(Date.now()));
 
 function renderTiles() {
   $('planTiles').innerHTML = Object.entries(PLAN_VIEWS).map(([k, [label, fn]]) => {
@@ -110,6 +130,7 @@ function render() {
   data.filter((o) => o.status !== 'resolved').forEach((o) =>
     pin(o).addTo(layer).bindPopup(`<b>${esc(o.code)}</b> ${TYPE_LABEL[o.type]}<br>${esc(o.address)}<br><a href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง</a>`));
 
+  fillCrews();
   $('crewList').innerHTML = usedValues('crew');
   $('matList').innerHTML = usedValues('materials');
   const dupOf = (o) => { const p = data.find((x) => x.id === o.duplicateOf); return p ? p.code : '#' + o.duplicateOf; };
@@ -167,13 +188,107 @@ $('filter').onchange = render;
 const pickView = (e) => { const t = e.target.closest('[data-view]'); if (t) { view = t.dataset.view; render(); } };
 $('planTiles').onclick = pickView;
 $('planTiles').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickView(e); } };
-$('routeAll').onclick = (e) => {
-  e.preventDefault();
-  const jobs = todayJobs();
-  if (!jobs.length) return alert('ยังไม่มีงานที่วางแผนไว้สำหรับวันนี้หรือเกินกำหนด');
-  if (jobs.length > 10) alert('Google Maps รองรับสูงสุด 10 จุด จะนำทางเฉพาะ 10 งานแรกตามความเร่งด่วน');
-  window.open(routeUrl(jobs), '_blank', 'noopener');
+
+// ---- วางแผนเส้นทางไปซ่อม ----
+const PRIORITY_COLOR = { urgent: '#dc2626', high: '#d97706', normal: '#2563eb', low: '#6b7280' };
+const START_KEY = 'routeStart';
+
+function fillCrews() {
+  const sel = $('pCrew'), cur = sel.value;
+  const crews = [...new Set(data.filter(isOpen).map((o) => (o.crew || '').trim()).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">ทุกทีม (รวมทุกงาน)</option><option value="__none">เฉพาะงานที่ยังไม่มอบหมายทีม</option>' +
+    crews.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+}
+
+function setStart(lat, lng, mode) {
+  start = { lat, lng }; startMode = mode;
+  if (startMarker) map.removeLayer(startMarker);
+  startMarker = L.marker([lat, lng], { title: 'จุดเริ่มต้น' }).addTo(map).bindTooltip('จุดเริ่มต้น', { permanent: false });
+  $('pStart').textContent = (mode === 'gps' ? 'เริ่มจากตำแหน่งปัจจุบัน' : 'เริ่มจากจุดที่เลือกบนแผนที่') + ` (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+  $('pClear').classList.remove('hidden');
+  if (mode === 'pick') { try { localStorage.setItem(START_KEY, JSON.stringify({ lat, lng })); } catch { /* ข้าม */ } }
+}
+function restoreStart() {
+  try { const s = JSON.parse(localStorage.getItem(START_KEY)); if (s && Number.isFinite(s.lat)) setStart(s.lat, s.lng, 'pick'); } catch { /* ข้าม */ }
+}
+$('pClear').onclick = () => {
+  start = null; startMode = null;
+  if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+  try { localStorage.removeItem(START_KEY); } catch { /* ข้าม */ }
+  $('pStart').textContent = 'ยังไม่ได้ตั้งจุดเริ่ม (จะเริ่มที่งานเร่งด่วนที่สุด)';
+  $('pClear').classList.add('hidden');
 };
+$('pGps').onclick = () => {
+  if (!navigator.geolocation) return alert('เบราว์เซอร์ไม่รองรับการระบุตำแหน่ง');
+  navigator.geolocation.getCurrentPosition(
+    (p) => setStart(p.coords.latitude, p.coords.longitude, 'gps'),
+    () => alert('อ่านตำแหน่งไม่ได้ กรุณาอนุญาตการเข้าถึงตำแหน่ง หรือเลือกจุดเริ่มบนแผนที่แทน'),
+    { enableHighAccuracy: true, timeout: 10000 });
+};
+$('pPick').onclick = () => {
+  picking = true;
+  $('pStart').textContent = 'แตะบนแผนที่เพื่อเลือกจุดเริ่มต้น…';
+  $('smap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+function poolJobs() {
+  let jobs = data.filter(isOpen);
+  if ($('pScope').value === 'due') jobs = jobs.filter(isDue);
+  const crew = $('pCrew').value;
+  if (crew === '__none') jobs = jobs.filter((o) => !(o.crew || '').trim());
+  else if (crew) jobs = jobs.filter((o) => (o.crew || '').trim() === crew);
+  return jobs;
+}
+
+function runPlan() {
+  routeLayer.clearLayers();
+  const jobs = poolJobs();
+  if (!jobs.length) { $('pResult').innerHTML = '<div class="msg err">ไม่มีงานตามเงื่อนไขที่เลือก</div>'; return; }
+  const max = Math.min(10, Math.max(1, Math.round(+$('pMax').value) || 10));
+  const mode = $('pMode').value;
+  const order = planRoute(jobs, mode, start).slice(0, max);
+  const km = pathKm(order, start);
+
+  let compare = '';
+  if (jobs.length <= max) { // เทียบโหมดอีกแบบได้เมื่อจัดครบทุกงาน (ชุดงานเท่ากัน)
+    const altMode = mode === 'distance' ? 'priority' : 'distance';
+    const altKm = pathKm(planRoute(jobs, altMode, start), start);
+    const diff = Math.abs(altKm - km);
+    if (diff >= 0.5) {
+      compare = mode === 'distance'
+        ? `<p class="muted">เทียบกัน: ถ้าเรียงตามความเร่งด่วนจะไกลกว่านี้ประมาณ <b>${diff.toFixed(1)} กม.</b></p>`
+        : `<p class="muted">เทียบกัน: ถ้าเรียงตามระยะทางจะใกล้กว่านี้ประมาณ <b>${diff.toFixed(1)} กม.</b> แต่ลำดับความเร่งด่วนจะเปลี่ยน</p>`;
+    }
+  }
+
+  let prev = start, items = '';
+  order.forEach((o, i) => {
+    const leg = prev ? roadKm(prev, o) : 0;
+    items += `<li class="item"><div class="row" style="justify-content:space-between">
+      <b>${i + 1}. ${esc(o.code)} · ${TYPE_LABEL[o.type]}</b>
+      <span class="badge" style="background:${PRIORITY_COLOR[o.priority]}">${PRIORITY_LABEL[o.priority]}</span></div>
+      <div>${esc(o.address)}</div>
+      <div class="muted">${prev ? `จากจุดก่อนหน้า ≈ ${leg.toFixed(1)} กม.` : 'จุดเริ่มต้น'}${o.crew ? ' · ทีม ' + esc(o.crew) : ''}</div>
+      <a class="navlink" href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทางไปจุดนี้</a></li>`;
+    prev = o;
+  });
+  $('pResult').innerHTML = `<div class="msg ok" style="margin-top:12px">
+      ${order.length} จุด · ระยะรวม ≈ <b>${km.toFixed(1)} กม.</b> · ขับประมาณ <b>${etaMin(km)} นาที</b>
+      (เรียงตาม${mode === 'distance' ? 'ระยะทาง' : 'ความเร่งด่วน'}${jobs.length > order.length ? ` · เลือก ${order.length} จาก ${jobs.length} งาน` : ''})</div>
+    ${compare}
+    <ol style="list-style:none;padding:0;margin:8px 0">${items}</ol>
+    <a class="navlink" style="width:100%;text-align:center" href="${routeUrl(order, startMode === 'pick' ? start : null)}" target="_blank" rel="noopener">🧭 เปิดเส้นทางทั้งหมดใน Google Maps</a>
+    <p class="muted">ระยะและเวลาเป็นค่าประมาณจากระยะตรง × ${ROAD_FACTOR} และความเร็วเฉลี่ย ${AVG_KMH} กม./ชม. ไม่ใช่ระยะถนนจริง เส้นทางจริงดูใน Google Maps${startMode === 'gps' ? ' (เริ่มจากตำแหน่งของเครื่องที่เปิดลิงก์)' : ''}</p>`;
+
+  const pts = [...(start ? [[start.lat, start.lng]] : []), ...order.map((o) => [o.lat, o.lng])];
+  L.polyline(pts, { color: '#2563eb', weight: 3, dashArray: '6 6' }).addTo(routeLayer);
+  order.forEach((o, i) => L.marker([o.lat, o.lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+    html: `<div style="width:26px;height:26px;border-radius:50%;background:${PRIORITY_COLOR[o.priority]};color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #fff">${i + 1}</div>` }) })
+    .addTo(routeLayer).bindPopup(`<b>${i + 1}. ${esc(o.code)}</b><br>${esc(o.address)}<br><a href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง</a>`));
+  if (pts.length > 1) map.fitBounds(pts, { padding: [30, 30] });
+}
+$('pGo').onclick = runPlan;
 
 async function load() {
   data = await api('/api/outages', {}, gate.token());
