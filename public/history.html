@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ประวัติซ่อมไฟฟ้า</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>🗂️ ประวัติซ่อมไฟฟ้า</h1>
+  <nav class="nav" aria-label="เมนูเจ้าหน้าที่">
+    <a href="/staff">📋 บันทึกงานซ่อม</a>
+    <a href="/history" class="active" aria-current="page">🗂️ ประวัติซ่อม</a>
+    <a href="/dashboard">📊 แดชบอร์ด</a>
+    <a href="/">🏠 หน้าประชาชน</a>
+    <a href="#" id="logout" class="out hidden">ออกจากระบบ</a>
+  </nav>
+</header>
+<main>
+  <section class="card" id="loginBox" style="max-width:380px;margin:40px auto;width:100%">
+    <h2>เข้าสู่ระบบเจ้าหน้าที่</h2>
+    <form id="loginForm">
+      <label for="pw">รหัสผ่าน</label>
+      <input id="pw" type="password" autofocus>
+      <p><button>เข้าสู่ระบบ</button></p>
+      <div id="loginErr" class="msg err hidden"></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden" style="display:grid;gap:16px">
+    <section class="card">
+      <h2>ค้นหาประวัติ</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div><label for="by">ค้นตามวันที่</label>
+          <select id="by"><option value="createdAt">วันที่แจ้งเหตุ</option><option value="resolvedAt">วันที่ซ่อมเสร็จ</option></select></div>
+        <div><label for="from">ตั้งแต่วันที่</label><input id="from" type="date"></div>
+        <div><label for="to">ถึงวันที่</label><input id="to" type="date"></div>
+        <div><label for="cause">สาเหตุ</label><select id="cause"></select></div>
+        <div><label for="status">สถานะ</label>
+          <select id="status"><option value="resolved">แก้ไขแล้ว</option><option value="">ทุกสถานะ</option>
+            <option value="pending">รอรับเรื่อง</option><option value="in_progress">กำลังซ่อม</option></select></div>
+        <div><label for="q">ค้นหา (รหัส/ที่อยู่/ทีมช่าง)</label><input id="q" placeholder="พิมพ์คำค้น"></div>
+      </div>
+      <div class="row" style="margin-top:12px;justify-content:space-between">
+        <label style="display:flex;gap:8px;align-items:center;margin:0">
+          <input type="checkbox" id="hideDup" checked style="width:auto"> ซ่อนรายการที่แจ้งซ้ำ
+        </label>
+        <span class="row">
+          <button class="sec" id="clear">ล้างตัวกรอง</button>
+          <button class="sec" id="export">⬇ ส่งออก CSV (ตามที่กรอง)</button>
+        </span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">รายการ</h2>
+        <span class="muted" id="summary"></span>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>รหัส</th><th>วันที่แจ้ง</th><th>เริ่มซ่อม</th><th>ซ่อมเสร็จ</th><th>ใช้เวลารวม</th><th>ที่อยู่ / ปัญหา</th><th>สาเหตุ</th><th>ทีมช่าง / วัสดุ</th><th>สถานะ</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const LIMIT = 500;
+let data = [], shown = [];
+
+const gate = staffGate(load);
+
+$('cause').innerHTML = '<option value="">ทุกสาเหตุ</option><option value="none">ยังไม่ระบุสาเหตุ</option>' +
+  Object.entries(CAUSE_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
+const dayOf = (iso) => new Date(new Date(iso).getTime() + 7 * 3600e3).toISOString().slice(0, 10); // วันที่ตามเวลาไทย
+const dur = (a, b) => {
+  if (!a || !b) return '-';
+  const m = Math.round((new Date(b) - new Date(a)) / 60000);
+  return m < 90 ? m + ' นาที' : (m / 60).toFixed(1) + ' ชม.';
+};
+const dt = (iso) => (iso ? fmt(iso) : '-');
+
+function filtered() {
+  const by = $('by').value, from = $('from').value, to = $('to').value;
+  const cause = $('cause').value, status = $('status').value, q = $('q').value.trim().toLowerCase();
+  return data.filter((o) => {
+    if ($('hideDup').checked && o.duplicateOf) return false;
+    if (status && o.status !== status) return false;
+    if (cause === 'none' ? o.cause : cause && o.cause !== cause) return false;
+    if (from || to) {
+      if (!o[by]) return false;
+      const d = dayOf(o[by]);
+      if ((from && d < from) || (to && d > to)) return false;
+    }
+    if (q && !`${o.code} ${o.address} ${o.crew} ${o.materials}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const all = filtered();
+  const key = $('by').value === 'resolvedAt' ? 'resolvedAt' : 'createdAt';
+  all.sort((a, b) => new Date(b[key] || 0) - new Date(a[key] || 0));
+  shown = all;
+  $('summary').textContent = `พบ ${all.length} รายการ` + (all.length > LIMIT ? ` (แสดง ${LIMIT} รายการแรก — ส่งออก CSV เพื่อดูทั้งหมด)` : '');
+  $('rows').innerHTML = all.slice(0, LIMIT).map((o) => `<tr>
+    <td><b>${esc(o.code)}</b>${o.duplicateOf ? '<div class="muted">แจ้งซ้ำ</div>' : ''}</td>
+    <td>${dt(o.createdAt)}</td><td>${dt(o.startedAt)}</td><td>${dt(o.resolvedAt)}</td>
+    <td>${dur(o.createdAt, o.resolvedAt)}</td>
+    <td>${esc(o.address)}<div class="muted">${esc(TYPE_LABEL[o.type] || '')}${o.description ? ' · ' + esc(o.description) : ''}</div></td>
+    <td>${o.cause ? esc(CAUSE_LABEL[o.cause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
+    <td>${esc(o.crew) || '-'}<div class="muted">${esc(o.materials)}</div></td>
+    <td><span class="badge" style="background:${STATUS_COLOR[o.status]}">${STATUS_LABEL[o.status]}</span></td>
+  </tr>`).join('') || '<tr><td colspan="9" class="muted">ไม่พบรายการตามเงื่อนไข</td></tr>';
+}
+
+async function load() {
+  try { data = await api('/api/outages', {}, gate.token()); }
+  catch (err) { if (/เข้าสู่ระบบ/.test(err.message)) return gate.expire(); throw err; }
+  if (data.length && data[0].reporterPhone === undefined) return gate.expire(); // token หมดอายุ
+  render();
+}
+
+['by', 'from', 'to', 'cause', 'status', 'hideDup'].forEach((id) => { $(id).onchange = render; });
+$('q').oninput = render;
+$('clear').onclick = () => {
+  ['from', 'to', 'cause', 'q'].forEach((id) => { $(id).value = ''; });
+  $('by').value = 'createdAt'; $('status').value = 'resolved'; $('hideDup').checked = true;
+  render();
+};
+
+const csvCell = (v) => {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // กันสูตร Excel
+  return '"' + s.replace(/"/g, '""') + '"';
+};
+$('export').onclick = () => {
+  const head = ['รหัส', 'วันที่แจ้ง', 'เริ่มซ่อม', 'ซ่อมเสร็จ', 'ใช้เวลารวม', 'ที่อยู่', 'ประเภท', 'สาเหตุ', 'ทีมช่าง', 'วัสดุที่ใช้', 'สถานะ', 'แจ้งซ้ำ'];
+  const lines = shown.map((o) => [o.code, o.createdAt, o.startedAt || '', o.resolvedAt || '', dur(o.createdAt, o.resolvedAt).replace('-', ''),
+    o.address, TYPE_LABEL[o.type] || '', CAUSE_LABEL[o.cause] || '', o.crew, o.materials, STATUS_LABEL[o.status], o.duplicateOf ? 'ใช่' : '']
+    .map(csvCell).join(','));
+  const blob = new Blob(['﻿' + [head.map(csvCell).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'repair-history-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>

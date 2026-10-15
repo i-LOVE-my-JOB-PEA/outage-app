@@ -167,7 +167,7 @@ module.exports = async (req, res) => {
     if (parts[1] === 'outages') {
       if (m === 'GET' && !parts[2]) {
         const staff = isStaff(req);
-        const list = (await sb('outages?select=*&order=id.desc&limit=500')).map(fromRow);
+        const list = (await sb(`outages?select=*&order=id.desc&limit=${staff ? 5000 : 500}`)).map(fromRow);
         return send(res, 200, staff ? list : list.map(publicView));
       }
       if (m === 'GET' && parts[2] === 'track') {
