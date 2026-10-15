@@ -23,6 +23,32 @@ async function api(path, opts = {}, token) {
   return data;
 }
 
+// ล็อกอินเจ้าหน้าที่ที่ใช้ร่วมกันทุกหน้า (ต้องมี #loginBox #loginForm #pw #loginErr #app #logout ในหน้า)
+function staffGate(onReady) {
+  const el = (id) => document.getElementById(id);
+  let token = sessionStorage.getItem('staffToken');
+  const gate = {
+    token: () => token,
+    expire() { sessionStorage.removeItem('staffToken'); token = null; location.reload(); },
+  };
+  const show = (on) => {
+    el('loginBox').classList.toggle('hidden', on);
+    el('app').classList.toggle('hidden', !on);
+    el('logout').classList.toggle('hidden', !on);
+  };
+  el('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      token = (await api('/api/login', { method: 'POST', body: { password: el('pw').value } })).token;
+      sessionStorage.setItem('staffToken', token);
+      show(true); onReady();
+    } catch (err) { el('loginErr').textContent = err.message; el('loginErr').classList.remove('hidden'); }
+  };
+  el('logout').onclick = (e) => { e.preventDefault(); gate.expire(); };
+  if (token) { show(true); setTimeout(onReady, 0); } // รอให้ผู้เรียกกำหนดตัวแปร gate เสร็จก่อน
+  return gate;
+}
+
 function makeMap(id) {
   const map = L.map(id).setView([13.7563, 100.5018], 11); // กรุงเทพฯ
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {

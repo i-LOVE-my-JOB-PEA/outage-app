@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แดชบอร์ดไฟฟ้าขัดข้อง</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>📊 แดชบอร์ดและรายงานไฟฟ้าขัดข้อง</h1>
+  <span class="row"><a href="/staff">🛠️ บันทึกข้อมูลงานซ่อม</a><a href="/">← หน้าประชาชน</a><a href="#" id="logout" class="hidden">ออกจากระบบ</a></span>
+</header>
+<main>
+  <section class="card" id="loginBox" style="max-width:380px;margin:40px auto;width:100%">
+    <h2>เข้าสู่ระบบเจ้าหน้าที่</h2>
+    <form id="loginForm">
+      <label for="pw">รหัสผ่าน</label>
+      <input id="pw" type="password" autofocus>
+      <p><button>เข้าสู่ระบบ</button></p>
+      <div id="loginErr" class="msg err hidden"></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden" style="display:grid;gap:16px">
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">สถานะงานซ่อม</h2>
+        <button class="sec" id="export">⬇ ส่งออก CSV (ข้อมูลทั้งหมด)</button>
+      </div>
+      <div class="stats" id="status"></div>
+      <p class="muted" style="margin:8px 0 0">นับเฉพาะเหตุจริง ไม่รวมรายการที่แจ้งซ้ำกับเหตุเดิม</p>
+    </section>
+
+    <section class="card">
+      <h2>ประสิทธิภาพการซ่อม</h2>
+      <div class="stats" id="kpi"></div>
+    </section>
+
+    <section class="card">
+      <h2>ไฟดับเพราะอะไร</h2>
+      <div class="grid2">
+        <div><b>ตามสาเหตุ (ที่เจ้าหน้าที่บันทึกตอนปิดงาน)</b><div id="byCause"></div></div>
+        <div><b>ตามประเภทปัญหาที่ประชาชนแจ้ง</b><div id="byType"></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>พื้นที่ไหนดับบ่อย</h2>
+      <div id="dmap"></div>
+      <p class="muted" style="margin:8px 0">วงกลมสีส้ม = พื้นที่ที่เกิดเหตุตั้งแต่ 2 ครั้งขึ้นไป (ตารางประมาณ 1 กม.)</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>พื้นที่ (ตัวอย่างที่อยู่)</th><th>จำนวนเหตุ</th><th>สาเหตุหลัก</th><th>ปัญหาที่พบบ่อย</th><th></th></tr></thead>
+        <tbody id="hotRows"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>ช่วงเวลาที่เกิดเหตุ</h2>
+      <div class="grid2">
+        <div><b>ชั่วโมงของวัน</b><div id="byHour"></div></div>
+        <div><b>วันของสัปดาห์</b><div id="byWeekday"></div></div>
+      </div>
+      <div style="margin-top:12px"><b>จำนวนการแจ้งเหตุรายวัน (30 วันล่าสุด)</b><div id="daily"></div></div>
+    </section>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let map, hot;
+
+const gate = staffGate(() => {
+  if (!map) { map = makeMap('dmap'); hot = L.layerGroup().addTo(map); }
+  setTimeout(() => map.invalidateSize(), 50);
+  load();
+});
+
+const fmtMin = (m) => {
+  if (m == null) return '-';
+  return m < 90 ? m + ' นาที' : (m / 60).toFixed(1) + ' ชม.';
+};
+const tiles = (items) => items.map(([l, n, c]) => `<div class="stat"><b style="color:${c}">${n}</b>${esc(l)}</div>`).join('');
+const bars = (obj, labels) => {
+  const max = Math.max(1, ...Object.values(obj));
+  return Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<div style="display:grid;grid-template-columns:140px 1fr 32px;gap:8px;align-items:center;margin:4px 0">
+      <span>${esc(labels[k] || k)}</span><div style="background:#2563eb;height:12px;border-radius:6px;width:${(v / max) * 100}%"></div><b>${v}</b></div>`).join('')
+    || '<span class="muted">ยังไม่มีข้อมูล</span>';
+};
+const columns = (arr, label, height) => {
+  const max = Math.max(1, ...arr);
+  const cols = arr.map((n, i) =>
+    `<div title="${label(i)}: ${n} เหตุ" style="flex:1;background:#2563eb;min-height:2px;height:${(n / max) * 100}%"></div>`).join('');
+  return `<div style="display:flex;align-items:flex-end;gap:2px;height:${height}px">${cols}</div>`;
+};
+
+async function load() {
+  let s;
+  try { s = await api('/api/stats', {}, gate.token()); }
+  catch (err) {
+    if (/เข้าสู่ระบบ/.test(err.message)) return gate.expire();
+    throw err;
+  }
+  const by = s.byStatus;
+  $('status').innerHTML = tiles([
+    ['เหตุทั้งหมด', s.uniqueIncidents, '#374151'],
+    ...Object.keys(STATUS_LABEL).map((k) => [STATUS_LABEL[k], by[k] || 0, STATUS_COLOR[k]]),
+    ['แจ้งซ้ำที่รวมแล้ว', s.duplicates, '#6b7280'],
+  ]);
+  $('kpi').innerHTML = tiles([
+    ['เวลาเฉลี่ยจากแจ้งถึงเริ่มซ่อม', fmtMin(s.avgResponseMin), '#2563eb'],
+    ['เวลาเฉลี่ยจากแจ้งจนซ่อมเสร็จ', fmtMin(s.avgRepairMin), '#16a34a'],
+  ]);
+  $('byCause').innerHTML = bars(s.byCause, CAUSE_LABEL);
+  $('byType').innerHTML = bars(s.byType, TYPE_LABEL);
+
+  const WD = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  $('byHour').innerHTML = columns(s.byHour, (i) => String(i).padStart(2, '0') + ':00', 70) +
+    '<div class="muted" style="display:flex;justify-content:space-between"><span>00:00</span><span>12:00</span><span>23:00</span></div>';
+  $('byWeekday').innerHTML = bars(Object.fromEntries(s.byWeekday.map((n, i) => [WD[i], n])), {});
+  const days = [];
+  for (let i = 29; i >= 0; i--) days.push(new Date(Date.now() + 7 * 3600e3 - i * 864e5).toISOString().slice(0, 10));
+  $('daily').innerHTML = columns(days.map((d) => s.daily[d] || 0), (i) => days[i], 80);
+
+  $('hotRows').innerHTML = s.hotspots.map((h) => `<tr>
+    <td>${esc(h.address)}</td><td><b>${h.count}</b></td>
+    <td>${h.topCause ? esc(CAUSE_LABEL[h.topCause]) : '<span class="muted">ยังไม่ระบุ</span>'}</td>
+    <td>${esc(TYPE_LABEL[h.topType] || '')}</td>
+    <td><a href="#" class="goto" data-lat="${h.lat}" data-lng="${h.lng}">ดูบนแผนที่</a></td></tr>`).join('') ||
+    '<tr><td colspan="5" class="muted">ยังไม่มีข้อมูล</td></tr>';
+  hot.clearLayers();
+  s.hotspots.filter((h) => h.count >= 2).forEach((h) =>
+    L.circle([h.lat, h.lng], { radius: 550, color: '#ea580c', weight: 1, fillOpacity: 0.3 })
+      .addTo(hot).bindPopup(`เกิดเหตุ ${h.count} ครั้งในพื้นที่นี้<br>${esc(h.address)}`));
+}
+
+$('hotRows').onclick = (e) => {
+  if (!e.target.classList.contains('goto')) return;
+  e.preventDefault();
+  map.setView([+e.target.dataset.lat, +e.target.dataset.lng], 14);
+  $('dmap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+$('export').onclick = async () => {
+  try {
+    const r = await fetch('/api/export', { headers: { Authorization: 'Bearer ' + gate.token() } });
+    if (!r.ok) throw new Error((await r.json()).error || 'ส่งออกไม่สำเร็จ');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = 'outages-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { alert(err.message); }
+};
+
+setInterval(() => { if (gate.token()) load().catch(() => {}); }, 60000);
+</script>
+</body>
+</html>
