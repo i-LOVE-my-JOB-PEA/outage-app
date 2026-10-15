@@ -11,8 +11,8 @@
 <header>
   <h1>⚡ แจ้งไฟฟ้าขัดข้อง</h1>
   <nav class="nav" aria-label="เมนูหลัก">
-    <a href="#reportBox">📝 แจ้งเหตุ</a>
-    <a href="#trackBox">🔎 ติดตามสถานะ</a>
+    <a href="/" class="active" aria-current="page">📝 แจ้งเหตุ</a>
+    <a href="/track">🔎 ติดตามสถานะ</a>
     <a href="/staff">👷 เจ้าหน้าที่</a>
   </nav>
 </header>
@@ -45,11 +45,6 @@
     </section>
 
     <div style="display:grid; gap:16px; align-content:start">
-      <section class="card" id="trackBox">
-        <h2>ติดตามสถานะ</h2>
-        <div class="row"><input id="code" placeholder="รหัสติดตาม เช่น PW1A2B3C"><button id="track">ค้นหา</button></div>
-        <div id="trackResult"></div>
-      </section>
       <section class="card">
         <h2>เหตุที่แจ้งล่าสุด</h2>
         <p class="muted" style="margin:-6px 0 6px">เหตุที่ยังไม่ปิด และที่แก้ไขแล้วภายใน 48 ชั่วโมง</p>
@@ -83,12 +78,6 @@ $('locate').onclick = () => {
     () => alert('ไม่สามารถอ่านตำแหน่งได้ กรุณาแตะบนแผนที่แทน'));
 };
 
-function badge(s) { return `<span class="badge" style="background:${STATUS_COLOR[s]}">${STATUS_LABEL[s]}</span>`; }
-function timeline(o) {
-  return '<ul class="timeline">' + o.history.map((h) =>
-    `<li>${fmt(h.at)} — ${STATUS_LABEL[h.status]}${h.note ? ': ' + esc(h.note) : ''}</li>`).join('') + '</ul>';
-}
-
 let recent = [], visible = 8;
 function renderList() {
   $('list').innerHTML = recent.slice(0, visible).map((o) => `
@@ -116,9 +105,9 @@ $('form').onsubmit = async (e) => {
       type: $('type').value, address: $('address').value, description: $('description').value,
       reporterName: $('name').value, reporterPhone: $('phone').value, consent: $('consent').checked, ...chosen } });
     r.className = 'msg ok';
-    r.innerHTML = `ส่งเรื่องแล้ว รหัสติดตามของคุณคือ <b>${esc(o.code)}</b> (กรุณาจดไว้)` +
+    r.innerHTML = `ส่งเรื่องแล้ว รหัสติดตามของคุณคือ <b>${esc(o.code)}</b> (กรุณาจดไว้) · <a href="/track?code=${encodeURIComponent(o.code)}">ดูสถานะ</a>` +
       (o.alreadyReported ? '<br>มีผู้แจ้งเหตุใกล้จุดนี้แล้ว ทีมงานรับทราบและกำลังดำเนินการ' : '');
-    $('code').value = o.code;
+    saveMyCode(o.code);
     e.target.reset(); $('coord').textContent = 'ยังไม่ได้ปักหมุด';
     if (marker) { map.removeLayer(marker); marker = null; chosen = null; }
     load();
@@ -126,15 +115,6 @@ $('form').onsubmit = async (e) => {
   $('submit').disabled = false;
 };
 
-$('track').onclick = async () => {
-  const code = $('code').value.trim();
-  if (!code) return;
-  try {
-    const o = await api('/api/outages/track?code=' + encodeURIComponent(code));
-    $('trackResult').innerHTML = `<div class="item"><div class="row" style="justify-content:space-between"><b>${o.code} · ${TYPE_LABEL[o.type]}</b>${badge(o.status)}</div>
-      <div>${esc(o.address)}</div>${timeline(o)}</div>`;
-  } catch (err) { $('trackResult').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
-};
 
 load();
 setInterval(load, 30000);

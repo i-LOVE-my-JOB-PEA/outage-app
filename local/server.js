@@ -114,7 +114,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
-    let file = url.pathname === '/' ? '/index.html' : url.pathname === '/staff' ? '/staff.html' : url.pathname;
+    let file = url.pathname === '/' ? '/index.html' : url.pathname === '/staff' ? '/staff.html' : url.pathname === '/track' ? '/track.html' : url.pathname;
     const full = path.normalize(path.join(PUBLIC_DIR, file));
     if (!full.startsWith(PUBLIC_DIR) || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
       res.writeHead(404); return res.end('Not found');

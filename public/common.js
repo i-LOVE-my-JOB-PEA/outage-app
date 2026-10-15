@@ -62,3 +62,21 @@ function pin(o) {
     radius: 9, color: '#fff', weight: 2, fillColor: STATUS_COLOR[o.status], fillOpacity: 0.95,
   });
 }
+
+function badge(s) { return `<span class="badge" style="background:${STATUS_COLOR[s]}">${STATUS_LABEL[s]}</span>`; }
+function timeline(o) {
+  return '<ul class="timeline">' + o.history.map((h) =>
+    `<li>${fmt(h.at)} — ${STATUS_LABEL[h.status]}${h.note ? ': ' + esc(h.note) : ''}</li>`).join('') + '</ul>';
+}
+
+// รหัสติดตามที่เคยแจ้งจากเครื่องนี้ (เก็บในเบราว์เซอร์เท่านั้น)
+const MY_KEY = 'myReports';
+function myCodes() {
+  try { return JSON.parse(localStorage.getItem(MY_KEY)) || []; } catch { return []; }
+}
+function saveMyCode(code) {
+  try {
+    const list = [code, ...myCodes().filter((c) => c !== code)].slice(0, 20);
+    localStorage.setItem(MY_KEY, JSON.stringify(list));
+  } catch { /* โหมดส่วนตัว/ปิดการเก็บข้อมูล: ข้ามไป */ }
+}

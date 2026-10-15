@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ติดตามสถานะไฟฟ้าขัดข้อง</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>⚡ แจ้งไฟฟ้าขัดข้อง</h1>
+  <nav class="nav" aria-label="เมนูหลัก">
+    <a href="/">📝 แจ้งเหตุ</a>
+    <a href="/track" class="active" aria-current="page">🔎 ติดตามสถานะ</a>
+    <a href="/staff">👷 เจ้าหน้าที่</a>
+  </nav>
+</header>
+<main style="max-width:700px">
+  <section class="card">
+    <h2>ค้นหาด้วยรหัสติดตาม</h2>
+    <form id="searchForm" class="row">
+      <input id="code" placeholder="เช่น PW1A2B3C" aria-label="รหัสติดตาม" autocapitalize="characters" autocomplete="off">
+      <button>ค้นหา</button>
+    </form>
+    <div id="searchResult"></div>
+  </section>
+
+  <section class="card">
+    <h2>เรื่องที่แจ้งจากเครื่องนี้</h2>
+    <div id="mine"><span class="muted">กำลังโหลด…</span></div>
+    <p class="muted" style="margin-bottom:0">รายการนี้จำไว้ในเบราว์เซอร์ของคุณเท่านั้น ถ้าเปลี่ยนเครื่องหรือล้างข้อมูลเบราว์เซอร์ ให้ค้นหาด้วยรหัสติดตาม</p>
+  </section>
+</main>
+
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+function card(o) {
+  return `<div class="item"><div class="row" style="justify-content:space-between">
+    <b>${esc(o.code)} · ${TYPE_LABEL[o.type] || ''}</b>${badge(o.status)}</div>
+    <div>${esc(o.address)}</div>${timeline(o)}</div>`;
+}
+
+async function lookup(code) {
+  return api('/api/outages/track?code=' + encodeURIComponent(code));
+}
+
+async function search(code) {
+  code = code.trim().toUpperCase();
+  if (!code) return;
+  $('code').value = code;
+  try { $('searchResult').innerHTML = card(await lookup(code)); }
+  catch (err) { $('searchResult').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+}
+
+async function loadMine() {
+  const codes = myCodes().slice(0, 10);
+  if (!codes.length) {
+    $('mine').innerHTML = '<span class="muted">ยังไม่มีเรื่องที่แจ้งจากเครื่องนี้</span>';
+    return;
+  }
+  const results = await Promise.allSettled(codes.map(lookup));
+  $('mine').innerHTML = results.map((r, i) => r.status === 'fulfilled' ? card(r.value)
+    : `<div class="item"><b>${esc(codes[i])}</b> <span class="muted">— ไม่พบรหัสนี้ในระบบ</span></div>`).join('');
+}
+
+$('searchForm').onsubmit = (e) => { e.preventDefault(); search($('code').value); };
+
+const fromUrl = new URLSearchParams(location.search).get('code');
+if (fromUrl) search(fromUrl);
+loadMine();
+setInterval(() => {
+  if ($('code').value.trim()) search($('code').value);
+  loadMine();
+}, 30000);
+</script>
+</body>
+</html>
