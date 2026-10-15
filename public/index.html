@@ -10,11 +10,15 @@
 <body>
 <header>
   <h1>⚡ แจ้งไฟฟ้าขัดข้อง</h1>
-  <a href="/staff">สำหรับเจ้าหน้าที่ →</a>
+  <nav class="nav" aria-label="เมนูหลัก">
+    <a href="#reportBox">📝 แจ้งเหตุ</a>
+    <a href="#trackBox">🔎 ติดตามสถานะ</a>
+    <a href="/staff">👷 เจ้าหน้าที่</a>
+  </nav>
 </header>
 <main>
   <div class="grid2">
-    <section class="card">
+    <section class="card" id="reportBox">
       <h2>แจ้งเหตุใหม่</h2>
       <form id="form">
         <label for="type">ประเภทปัญหา</label>
@@ -41,7 +45,7 @@
     </section>
 
     <div style="display:grid; gap:16px; align-content:start">
-      <section class="card">
+      <section class="card" id="trackBox">
         <h2>ติดตามสถานะ</h2>
         <div class="row"><input id="code" placeholder="รหัสติดตาม เช่น PW1A2B3C"><button id="track">ค้นหา</button></div>
         <div id="trackResult"></div>
