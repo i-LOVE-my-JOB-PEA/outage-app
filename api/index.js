@@ -2,7 +2,9 @@
 // ตัวแปรที่ต้องตั้ง: SUPABASE_URL, SUPABASE_SERVICE_KEY, STAFF_PASSWORD (และ TOKEN_SECRET ถ้าต้องการ)
 const crypto = require('node:crypto');
 
-const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
+const SUPABASE_SERVICE_KEY = (process.env.SUPABASE_SERVICE_KEY || '').trim();
+// ตัดช่องว่าง, "/" ท้าย และ "/rest/v1" ที่อาจติดมาตอนคัดลอก
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
 const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'admin1234';
 const SECRET = process.env.TOKEN_SECRET || STAFF_PASSWORD;
 const STATUSES = ['pending', 'in_progress', 'resolved'];
